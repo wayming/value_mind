@@ -13,6 +13,7 @@ import argparse
 import json
 import logging
 import sys
+import asyncio
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -56,7 +57,7 @@ def parse_args():
     return p.parse_args()
 
 
-def main() -> int:
+async def main() -> int:
     args = parse_args()
 
     if args.out:
@@ -108,7 +109,7 @@ def main() -> int:
         graph = build_graph()
         print(f"\n▶ 开始估值:{state['exchange']} {state['code']}"
               f"{'(假设覆盖:' + str(overrides) + ')' if overrides else ''}\n")
-        final = graph.invoke(state, config={"recursion_limit": 60})
+        final = await graph.ainvoke(state, config={"recursion_limit": 60})
 
         print_summary(final)
         path = final.get("final_report_path")
@@ -178,4 +179,4 @@ def print_summary(final: dict) -> None:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    asyncio.run(main())

@@ -9,10 +9,14 @@
 - 返回内容压缩,防止超长(每个指标序列保留首尾各 6 个点)。
 """
 
+from langchain_core.runnables.config import RunnableConfig
+from langchain_core.messages import ToolCall
+from langchain_mcp_adapters.client import MultiServerMCPClient
 import json
 from typing import Any, Callable
 
 from langchain_core.tools import tool as lc_tool
+from langchain_core.tools import StructuredTool
 
 from mcp_client import get_mcp_client, get_tool_definitions
 
@@ -79,55 +83,43 @@ def _compact(tool_name: str, raw: Any) -> str:
         return _compact_financials(raw)
     return _truncate(json.dumps(raw, ensure_ascii=False))
 
-
-def make_mcp_tools() -> tuple[list[Callable], dict[str, Any]]:
+async def make_mcp_tools() -> tuple[list[Callable], dict[str, Any]]:
     """创建 3 个 MCP callable 工具 + 缓存容器。
 
     返回 (tools, cache):tools 绑定给 LLM;cache 记录 LLM 调用过的原始结果,
     节点结束时合并进 state["data_cache"]。
     """
-    client = get_mcp_client()
+    tools = []
     cache: dict[str, Any] = {}
-
-    def call(name: str, args: dict) -> str:
-        if client is None:
-            return ("错误:MCP 未连接,数据不可用。请基于行业常识给出假设,"
-                    "并在相应理由字段中明确标注为假设。")
-        raw = client.call_tool(name, args)
-        if raw is None:
-            return (f"错误:调用 {name} 失败或无数据(可能指标不存在、该股票无数据或服务器错误)。"
-                    "可先调用 list_metrics 确认可用指标,或缩短 period 重试;"
-                    "仍不行则基于行业常识假设并在理由字段标注。")
-        cache[f"{name}|{json.dumps(args, sort_keys=True, ensure_ascii=False)}"] = raw
-        return _compact(name, raw)
-
-    def _list_metrics(exchange: str, code: str) -> str:
-        return call("list_metrics", {"exchange": exchange, "code": code})
-
-    def _get_data_period(exchange: str, code: str) -> str:
-        return call("get_data_period", {"exchange": exchange, "code": code})
-
-    def _get_financials(exchange: str, code: str, metrics: list[str], period: str) -> str:
-        return call(
-            "get_financials",
-            {"exchange": exchange, "code": code, "metrics": metrics, "period": period},
+    try:
+        client = MultiServerMCPClient(
+            {
+                "sacollecotor": {
+                    "url": "http://localhost:8081/mcp",
+                    "transport": "streamable-http"
+                }
+            }
         )
+        for tool in await client.get_tools():
+            tools.append(_wrap_tool(tool, cache))
+        return tools, cache
+    except Exception as e:
+        print(f"Failed to create MCP tools: {e}")
+        return [], cache
 
-    # 先赋中文 docstring(langchain 在 lc_tool() 调用时读取),再包装成工具
-    for fn, name in (
-        (_list_metrics, "list_metrics"),
-        (_get_data_period, "get_data_period"),
-        (_get_financials, "get_financials"),
+def _wrap_tool(tool, cache: dict[str, Any]):
+    async def _ainvoke(
+        **kwargs : Any
     ):
-        fn.__doc__ = _DESC[name]
-
-    tools = [
-        lc_tool("list_metrics")(_list_metrics),
-        lc_tool("get_data_period")(_get_data_period),
-        lc_tool("get_financials")(_get_financials),
-    ]
-    return tools, cache
-
+        raw = await tool.ainvoke(kwargs)
+        cache[f"{tool.name}|{json.dumps(kwargs, sort_keys=True, ensure_ascii=False)}"] = raw
+        return raw
+    return StructuredTool.from_function(
+        coroutine = _ainvoke,
+        name = tool.name,
+        description = tool.description,
+        args_schema=tool.args_schema
+    )
 
 def _fetch_args(key: str) -> dict[str, Any]:
     """从缓存键 `get_financials|{json}` 还原调用参数。"""

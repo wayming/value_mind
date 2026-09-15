@@ -15,10 +15,10 @@ import json
 import logging
 from typing import Annotated, Any, NotRequired, Sequence, TypedDict
 
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.errors import GraphRecursionError
 from langgraph.graph.message import add_messages
-from langgraph.prebuilt import create_react_agent
+from langchain.agents import create_agent
 from pydantic import BaseModel
 
 import app.config as config
@@ -76,7 +76,7 @@ class _NodeState(TypedDict):
 # 通用:运行一个 skill agent
 # ---------------------------------------------------------------------------
 
-def run_skill_agent(
+async def run_skill_agent(
     skill_id: str,
     ctx: dict,
     schema: type[BaseModel],
@@ -89,43 +89,51 @@ def run_skill_agent(
     返回 (参数对象, 本次调用产生的 MCP 数据缓存)。
     """
     doc = load_skill(skill_id)
-    tools, cache = make_mcp_tools()
-    model = get_model()
-    if allow_tools and not config.PARALLEL_TOOL_CALLS:
-        try:
-            model = model.bind_tools(tools, parallel_tool_calls=False)
-        except TypeError:  # 模型不支持该参数则退回默认行为
-            model = get_model()
-
-    prompt = doc.body + _TOOL_USAGE_GUIDE + extra_prompt
-    msg = HumanMessage(content=json.dumps(ctx, ensure_ascii=False, indent=2))
-    limit = config.MAX_LLM_STEPS * 2 + 2
+    tools, cache = await make_mcp_tools()
     if not allow_tools:
         tools = []
 
-    def _invoke(sys_prompt: str) -> dict:
+    model = get_model()
+    prompt = doc.body + _TOOL_USAGE_GUIDE + extra_prompt
+    msg = HumanMessage(content=json.dumps(ctx, ensure_ascii=False, indent=2))
+    limit = config.MAX_LLM_STEPS * 2 + 2
+
+
+    async def _invoke(sys_prompt: str, use_tool: bool = True) -> dict:
         # 工具循环与结构化输出分两步:create_react_agent 的 response_format 内部固定
         # with_structured_output(schema) 不带 method,会撞上本网关不支持的 json_schema
         # (见 llm.structured_model 的说明)。所以结构化那步自己发,method 可降级。
-        agent = create_react_agent(
+        agent = create_agent(
             model=model,
-            tools=tools,
-            prompt=sys_prompt,
-            state_schema=_NodeState,
-            version="v2",
+            tools=tools if use_tool else [],
+            response_format=schema,
+            system_prompt=sys_prompt,
+            name=f"skill_{skill_id}"
         )
-        out = agent.invoke({"messages": [msg]}, config={"recursion_limit": limit})
-        convo = [SystemMessage(content=_STRUCTURED_INSTRUCTION)] + list(out["messages"])
-        return {"structured_response": llm.structured_model(schema).invoke(convo)}
+        out = await agent.ainvoke({"messages": [msg]}, config={"recursion_limit": limit})
+        params = out.get("structured_response")
+        if params is None:
+            messages = out.get("messages", [])
+            logger.error(
+                "%s: structured_response=None, keys=%s, last_message=%r",
+                skill_id,
+                list(out.keys()),
+                messages[-1] if messages else None,
+            )
+            raise ValueError(
+                f"{skill_id}: LLM 未返回结构化参数"
+            )
+        return {"structured_response": params}
 
     try:
-        out = _invoke(prompt)
+        out = await _invoke(prompt)
     except GraphRecursionError:
         # 工具调用耗尽步数:降级重试,明确要求立即停止取数并输出参数
         logger.warning("%s: 工具调用达到步数上限,降级重试(禁止再调用工具)", skill_id)
-        out = _invoke(
+        out = await _invoke(
             prompt + "\n\n【重要】你已用完工具调用额度。现在**不得再调用任何工具**,"
-            "立即基于已知信息输出参数;缺失字段用合理假设代替,并在相应理由/analysis 字段中标注为假设。"
+            "立即基于已知信息输出参数;缺失字段用合理假设代替,并在相应理由/analysis 字段中标注为假设。"            ,
+            use_tool=False
         )
 
     params = out.get("structured_response")
@@ -168,9 +176,9 @@ def _write(state: ValuationState, skill: str, **update) -> dict:
 # 01 公司分类
 # ---------------------------------------------------------------------------
 
-def classify_node(state: ValuationState) -> dict:
+async def classify_node(state: ValuationState) -> dict:
     try:
-        params, cache = run_skill_agent("01_company_classifier", _base_ctx(state), schemas.ClassifyParams)
+        params, cache = await run_skill_agent("01_company_classifier", _base_ctx(state), schemas.ClassifyParams)
     except Exception as e:  # noqa: BLE001
         logger.exception("01 分类失败")
         return {"errors": [f"01 公司分类失败:{e}"], **_write(state, "classify", error=str(e))}
@@ -193,11 +201,11 @@ def classify_node(state: ValuationState) -> dict:
 # 02 股权成本
 # ---------------------------------------------------------------------------
 
-def cost_of_equity_node(state: ValuationState) -> dict:
+async def cost_of_equity_node(state: ValuationState) -> dict:
     ctx = _base_ctx(state)
     ctx["公司分类结论"] = _skill_brief(state, "classify")
     try:
-        params, cache = run_skill_agent("02_cost_of_equity", ctx, schemas.CostOfEquityParams)
+        params, cache = await run_skill_agent("02_cost_of_equity", ctx, schemas.CostOfEquityParams)
     except Exception as e:  # noqa: BLE001
         logger.exception("02 股权成本失败")
         return {"errors": [f"02 股权成本失败:{e}"], **_write(state, "cost_of_equity", error=str(e))}
@@ -232,7 +240,7 @@ def cost_of_equity_node(state: ValuationState) -> dict:
 # 03 股息与增长
 # ---------------------------------------------------------------------------
 
-def dividends_growth_node(state: ValuationState) -> dict:
+async def dividends_growth_node(state: ValuationState) -> dict:
     ctx = _base_ctx(state)
     ctx["公司分类结论"] = _skill_brief(state, "classify")
     ctx["已定的股权成本参数"] = {
@@ -240,7 +248,7 @@ def dividends_growth_node(state: ValuationState) -> dict:
         if k in ("coe_high", "coe_terminal", "rf", "erp")
     }
     try:
-        params, cache = run_skill_agent("03_dividends_growth", ctx, schemas.DividendsGrowthParams)
+        params, cache = await run_skill_agent("03_dividends_growth", ctx, schemas.DividendsGrowthParams)
     except Exception as e:  # noqa: BLE001
         logger.exception("03 股息增长失败")
         return {"errors": [f"03 股息与增长失败:{e}"], **_write(state, "dividends_growth", error=str(e))}
@@ -321,7 +329,7 @@ _REPAIR_PROMPT = (
 )
 
 
-def compute_with_repair(
+async def compute_with_repair(
     skill_id: str,
     schema: type[BaseModel],
     ctx: dict,
@@ -350,7 +358,7 @@ def compute_with_repair(
         "任务": "修正参数使其自洽(满足报错中给出的硬约束),再输出完整参数对象",
     }
     try:
-        params2, _ = run_skill_agent(
+        params2, _ = await run_skill_agent(
             skill_id, repair_ctx, schema, extra_prompt=_REPAIR_PROMPT, allow_tools=False
         )
         result = compute(params2)
@@ -364,13 +372,13 @@ def compute_with_repair(
 # 04 股息贴现模型
 # ---------------------------------------------------------------------------
 
-def ddm_node(state: ValuationState) -> dict:
+async def ddm_node(state: ValuationState) -> dict:
     ctx = _base_ctx(state)
     ctx["公司分类结论"] = _skill_brief(state, "classify")
     ctx["已定的全局参数"] = state.get("coefficients") or {}
     ctx["股息与增长分析结论"] = _skill_brief(state, "dividends_growth")
     try:
-        params, cache = run_skill_agent("04_ddm", ctx, schemas.DdmParams)
+        params, cache = await run_skill_agent("04_ddm", ctx, schemas.DdmParams)
     except Exception as e:  # noqa: BLE001
         logger.exception("04 DDM 失败")
         return {"errors": [f"04 DDM 失败:{e}"], **_write(state, "ddm", error=str(e))}
@@ -398,7 +406,7 @@ def ddm_node(state: ValuationState) -> dict:
         return r, grid
 
     try:
-        (r, grid), params, repair_notes = compute_with_repair(
+        (r, grid), params, repair_notes = await compute_with_repair(
             "04_ddm", schemas.DdmParams, ctx, params, _compute)
     except Exception as e:  # noqa: BLE001
         return {"errors": [f"04 DDM 计算失败:{e}"], **_write(state, "ddm", error=str(e))}
@@ -438,12 +446,12 @@ def _spread(center: float, span: float, step: float) -> list[float]:
 # 05 监管资本 FCFE
 # ---------------------------------------------------------------------------
 
-def reg_capital_fcfe_node(state: ValuationState) -> dict:
+async def reg_capital_fcfe_node(state: ValuationState) -> dict:
     ctx = _base_ctx(state)
     ctx["公司分类结论"] = _skill_brief(state, "classify")
     ctx["已定的全局参数"] = state.get("coefficients") or {}
     try:
-        params, cache = run_skill_agent("05_reg_capital_fcfe", ctx, schemas.FcfeParams)
+        params, cache = await run_skill_agent("05_reg_capital_fcfe", ctx, schemas.FcfeParams)
     except Exception as e:  # noqa: BLE001
         logger.exception("05 监管资本 FCFE 失败")
         return {"errors": [f"05 监管资本 FCFE 失败:{e}"],
@@ -470,7 +478,7 @@ def reg_capital_fcfe_node(state: ValuationState) -> dict:
         )
 
     try:
-        r, params, repair_notes = compute_with_repair(
+        r, params, repair_notes = await compute_with_repair(
             "05_reg_capital_fcfe", schemas.FcfeParams, ctx, params, _compute)
     except Exception as e:  # noqa: BLE001
         return {"errors": [f"05 FCFE 计算失败:{e}"],
@@ -502,13 +510,13 @@ def reg_capital_fcfe_node(state: ValuationState) -> dict:
 # 06 超额回报模型
 # ---------------------------------------------------------------------------
 
-def excess_returns_node(state: ValuationState) -> dict:
+async def excess_returns_node(state: ValuationState) -> dict:
     ctx = _base_ctx(state)
     ctx["公司分类结论"] = _skill_brief(state, "classify")
     ctx["已定的全局参数"] = state.get("coefficients") or {}
     ctx["股息与增长分析结论"] = _skill_brief(state, "dividends_growth")
     try:
-        params, cache = run_skill_agent("06_excess_returns", ctx, schemas.ExcessParams)
+        params, cache = await run_skill_agent("06_excess_returns", ctx, schemas.ExcessParams)
     except Exception as e:  # noqa: BLE001
         logger.exception("06 超额回报失败")
         return {"errors": [f"06 超额回报失败:{e}"], **_write(state, "excess_returns", error=str(e))}
@@ -532,7 +540,7 @@ def excess_returns_node(state: ValuationState) -> dict:
         return perpet, staged
 
     try:
-        (perpet, staged), params, repair_notes = compute_with_repair(
+        (perpet, staged), params, repair_notes = await compute_with_repair(
             "06_excess_returns", schemas.ExcessParams, ctx, params, _compute)
     except Exception as e:  # noqa: BLE001
         return {"errors": [f"06 超额回报计算失败:{e}"], **_write(state, "excess_returns", error=str(e))}
@@ -565,12 +573,12 @@ def excess_returns_node(state: ValuationState) -> dict:
 # 07 相对估值
 # ---------------------------------------------------------------------------
 
-def relative_valuation_node(state: ValuationState) -> dict:
+async def relative_valuation_node(state: ValuationState) -> dict:
     ctx = _base_ctx(state)
     ctx["公司分类结论"] = _skill_brief(state, "classify")
     ctx["已定的全局参数"] = state.get("coefficients") or {}
     try:
-        params, cache = run_skill_agent("07_relative_valuation", ctx, schemas.RelativeParams)
+        params, cache = await run_skill_agent("07_relative_valuation", ctx, schemas.RelativeParams)
     except Exception as e:  # noqa: BLE001
         logger.exception("07 相对估值失败")
         return {"errors": [f"07 相对估值失败:{e}"],
@@ -605,6 +613,13 @@ def relative_valuation_node(state: ValuationState) -> dict:
                     "若数据是单季口径,σ 会被低估、预测 PB 偏高"
                 )
             stats = F.ratio_series_stats(series, basis)
+
+            logger.error(
+                "DEBUG ratio_series_stats: type=%s value=%r",
+                type(stats).__name__,
+                stats,
+            )
+
             conflict = F.basis_conflict(stats)
             if conflict:
                 warnings.append(f"ROE 序列{conflict},已按声明口径计算,请核对")
@@ -714,7 +729,7 @@ _RANGE_REPAIR_PROMPT = (
 )
 
 
-def _reconcile_range(params: Any, values: dict[str, float], ctx: dict) -> tuple[Any, str | None]:
+async def _reconcile_range(params: Any, values: dict[str, float], ctx: dict) -> tuple[Any, str | None]:
     """区间自洽修复:加权均值落在 LLM 自给区间外时回喂一次。
 
     这是一个真实的矛盾,不是笔误——区间说"值在 53~70",权重却算出 71.4。放宽区间还是
@@ -738,7 +753,7 @@ def _reconcile_range(params: Any, values: dict[str, float], ctx: dict) -> tuple[
         "Python 用你的权重算出的加权均值": mean,
     }
     try:
-        params2, _ = run_skill_agent(
+        params2, _ = await run_skill_agent(
             "08_synthesize", repair_ctx, schemas.SynthesisParams,
             extra_prompt=_RANGE_REPAIR_PROMPT, allow_tools=False,
         )
@@ -759,7 +774,7 @@ def _reconcile_range(params: Any, values: dict[str, float], ctx: dict) -> tuple[
     )
 
 
-def synthesize_node(state: ValuationState) -> dict:
+async def synthesize_node(state: ValuationState) -> dict:
     ctx = _base_ctx(state)
     ctx["公司分类结论"] = _skill_brief(state, "classify")
     ctx["全局参数"] = state.get("coefficients") or {}
@@ -770,7 +785,7 @@ def synthesize_node(state: ValuationState) -> dict:
                      "excess_returns", "relative_valuation")
     }
     try:
-        params, cache = run_skill_agent("08_synthesize", ctx, schemas.SynthesisParams)
+        params, cache = await run_skill_agent("08_synthesize", ctx, schemas.SynthesisParams)
     except Exception as e:  # noqa: BLE001
         logger.exception("08 综合失败")
         return {"errors": [f"08 综合失败:{e}"], **_write(state, "synthesize", error=str(e))}
@@ -783,7 +798,7 @@ def synthesize_node(state: ValuationState) -> dict:
     }
     warnings: list[str] = []
     # 先让区间与权重自洽(必要时回喂一次),再算最终加权均值
-    params, range_note = _reconcile_range(params, values, ctx)
+    params, range_note = await _reconcile_range(params, values, ctx)
     if range_note:
         warnings.append(range_note)
 
