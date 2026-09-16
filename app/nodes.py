@@ -13,6 +13,7 @@ structured_response} 状态,避免消息串污染与 token 膨胀。
 
 import json
 import logging
+import re
 from typing import Annotated, Any, NotRequired, Sequence, TypedDict
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -52,6 +53,9 @@ _TOOL_USAGE_GUIDE = """
   不同的 period 或指标。缺失的数据用行业常识假设并在理由字段中标注,这比继续调用更有价值。
 - **调用失败不要重试超过一次**:工具返回错误说明时,换指标或换 period 重试一次即可,仍失败则
   改用假设并标注。
+- **文字字段里的引号**:输出结构化参数时,文字字段(analysis、各类理由/说明)内**不要出现英文
+  双引号 `"`**,它会让整个参数对象的 JSON 解析失败、这一节点直接作废(实测 08 综合节点因此
+  失败过一次);需要引号时用中文引号「」。
 """
 
 _STRUCTURED_INSTRUCTION = (
@@ -76,6 +80,67 @@ class _NodeState(TypedDict):
 # 通用:运行一个 skill agent
 # ---------------------------------------------------------------------------
 
+def _invalid_tool_calls(out: dict) -> list:
+    """模型发出、但参数 JSON 不合法而被 langchain 丢进 invalid_tool_calls 的结构化调用。
+
+    这类消息不会进 tool_calls,langchain 的 ToolStrategy 分支因此既不解析也不报错,
+    agent 静默返回、structured_response 为 None —— 只能自己检查。
+    """
+    bad = []
+    for m in out.get("messages", None) or []:
+        bad.extend(getattr(m, "invalid_tool_calls", None) or [])
+    return bad
+
+
+_BAD_JSON_PROMPT = (
+    "\n\n【重要】你上一轮输出的参数对象不是合法 JSON,外部程序解析失败(最常见的原因是文字"
+    "字段里用了未转义的英文双引号)。请重新输出**完整**的参数对象:保留上一轮的全部分析与"
+    "判断,文字字段内一律用中文引号「」,不要出现英文双引号,换行与反斜杠也要正确转义。"
+)
+
+_MISSING_STRUCTURED_PROMPT = (
+    "\n\n【重要】你上一轮没有输出结构化参数对象,只在正文里写了分析。请立即输出**一次**"
+    "结构化的参数对象,不要在正文里复述分析过程。"
+)
+
+_MAX_ECHO = 8000   # 回喂原文的上限(字符),超过就退回只给通用话术
+
+
+def _parse_error_excerpt(error: str) -> str:
+    """从 langchain 的 invalid_tool_call.error 里取出关键那句。
+
+    它把整份 args 也塞进了报错文案('Function X arguments:\\n\\n{...}\\n\\nare not valid JSON.
+    Received ...'),整段回喂等于把输入翻倍,所以只截 'are not valid JSON.' 之后的部分。
+    """
+    tail = error.split("are not valid JSON.", 1)[-1]
+    return tail.split("For troubleshooting", 1)[0].strip()
+
+
+def _repair_message(bad: list):
+    """把模型上一轮那份"差一点就对"的参数原样回喂(带出错位置),让它改转义而不是重做分析。
+
+    为什么不直接让它重跑一遍:这次失败是 4KB 中文散文里一处转义手滑(实测落在
+    '属"温和增价值"' 这种中文引号习惯上),重跑很可能在同样的措辞上再滑一次;
+    看着自己的原文改引号,一次就能改对。没有非法调用、或 args 过大时返回 None,退回通用话术。
+    """
+    if not bad:
+        return None
+    tc = bad[0]
+    args = tc.get("args") or ""
+    if not args or len(args) > _MAX_ECHO:
+        return None
+    lines = [f"你上一轮输出的参数对象(原样,共 {len(args)} 字符):", args, ""]
+    reason = _parse_error_excerpt(tc.get("error") or "")
+    if reason:
+        lines.append(f"外部程序解析它时的报错:{reason}")
+    m = re.search(r"char (\d+)", reason)
+    if m:
+        i = int(m.group(1))
+        lines.append(f"出错位置附近的原文:…{args[max(0, i - 60): i + 60]}…")
+    lines.append("请修正上述问题后,重新输出**完整**的参数对象。")
+    return HumanMessage(content="\n".join(lines))
+
+
 async def run_skill_agent(
     skill_id: str,
     ctx: dict,
@@ -99,7 +164,7 @@ async def run_skill_agent(
     limit = config.MAX_LLM_STEPS * 2 + 2
 
 
-    async def _invoke(sys_prompt: str, use_tool: bool = True) -> dict:
+    async def _invoke(sys_prompt: str, use_tool: bool = True, extra: list | None = None) -> dict:
         # 工具循环与结构化输出分两步:create_react_agent 的 response_format 内部固定
         # with_structured_output(schema) 不带 method,会撞上本网关不支持的 json_schema
         # (见 llm.structured_model 的说明)。所以结构化那步自己发,method 可降级。
@@ -110,20 +175,22 @@ async def run_skill_agent(
             system_prompt=sys_prompt,
             name=f"skill_{skill_id}"
         )
-        out = await agent.ainvoke({"messages": [msg]}, config={"recursion_limit": limit})
-        params = out.get("structured_response")
-        if params is None:
+        # metadata 里的 vm_skill 是 llm.out 的归属标记:agent 内部的 langgraph_node
+        # 恒为 "model",光靠它分不出这次对话属于哪个 skill。
+        out = await agent.ainvoke(
+            {"messages": [msg, *(extra or [])]},
+            config={"recursion_limit": limit, "metadata": {"vm_skill": skill_id}},
+        )
+        if out.get("structured_response") is None:
             messages = out.get("messages", [])
             logger.error(
-                "%s: structured_response=None, keys=%s, last_message=%r",
+                "%s: structured_response=None, keys=%s, 非法工具调用=%d, last_message=%r",
                 skill_id,
                 list(out.keys()),
+                len(_invalid_tool_calls(out)),
                 messages[-1] if messages else None,
             )
-            raise ValueError(
-                f"{skill_id}: LLM 未返回结构化参数"
-            )
-        return {"structured_response": params}
+        return out
 
     try:
         out = await _invoke(prompt)
@@ -132,13 +199,26 @@ async def run_skill_agent(
         logger.warning("%s: 工具调用达到步数上限,降级重试(禁止再调用工具)", skill_id)
         out = await _invoke(
             prompt + "\n\n【重要】你已用完工具调用额度。现在**不得再调用任何工具**,"
-            "立即基于已知信息输出参数;缺失字段用合理假设代替,并在相应理由/analysis 字段中标注为假设。"            ,
+            "立即基于已知信息输出参数;缺失字段用合理假设代替,并在相应理由/analysis 字段中标注为假设。",
             use_tool=False
         )
 
     params = out.get("structured_response")
     if params is None:
-        raise RuntimeError(f"{skill_id}: LLM 未返回结构化参数(结构化输出失败)")
+        # 结构化缺失有两种原因,回喂的话术不同(见 _BAD_JSON_PROMPT / _MISSING_STRUCTURED_PROMPT)。
+        # langchain 对"调了工具但参数 JSON 不合法"是静默的:invalid_tool_calls 不参与解析,
+        # 也不触发它自己的校验重试,agent 直接返回,只能由这里补一次。
+        bad = _invalid_tool_calls(out)
+        repair = _repair_message(bad)
+        logger.warning("%s: 未拿到结构化参数(非法工具调用 %d 个,回喂原文=%s),重试一次",
+                       skill_id, len(bad), bool(repair))
+        out = await _invoke(
+            prompt + (_BAD_JSON_PROMPT if bad else _MISSING_STRUCTURED_PROMPT),
+            extra=[repair] if repair else None,
+        )
+        params = out.get("structured_response")
+    if params is None:
+        raise RuntimeError(f"{skill_id}: LLM 未返回结构化参数(回喂重试后仍失败)")
     return params, cache
 
 

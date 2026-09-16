@@ -40,6 +40,12 @@ LLM_DISABLE_THINKING = _env("LLM_DISABLE_THINKING", "1") == "1"
 # 结构化输出的实现方式,留空 = 按通道自动选(openai → function_calling,anthropic → 默认)。
 # 可选:function_calling / json_schema / json_mode。自动模式下一次调用失败会降级重试。
 LLM_STRUCTURED_METHOD = _env("LLM_STRUCTURED_METHOD", "")
+# ---- LLM 对话日志 ----
+# 每次模型往返的原始输入输出落一份到 llm.out(文本块 + 末行 @@JSON@@ 机读 JSON)。
+# 内容不截断(含 skill 提示词全文与工具返回),文件会很大:估值一次几十 MB 量级。
+LLM_LOG = _env("LLM_LOG", "1") == "1"                  # 0 = 关闭
+LLM_LOG_PATH = _env("LLM_LOG_PATH", "")                # 空 = <value_mind>/llm.out
+
 MAX_LLM_STEPS = int(_env("MAX_LLM_STEPS", "14"))       # 单节点内 LLM 工具调用步数上限
 LLM_TEMPERATURE = float(_env("LLM_TEMPERATURE", "0"))  # 估值分析用 0,保证可复现
 LLM_TIMEOUT = float(_env("LLM_TIMEOUT", "120"))        # 秒

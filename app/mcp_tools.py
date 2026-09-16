@@ -108,16 +108,20 @@ async def make_mcp_tools() -> tuple[list[Callable], dict[str, Any]]:
         return [], cache
 
 def _wrap_tool(tool, cache: dict[str, Any]):
-    async def _ainvoke(
-        **kwargs : Any
-    ):
-        raw = await tool.ainvoke(kwargs)
+    async def _ainvoke(**kwargs: Any):
+        # 缓存还原后的结构化结果(供 Python 侧算统计量),给 LLM 的是压缩文本:
+        # 两者不能混——塞原始块进缓存会让 _points_of 拿到 list 直接炸,
+        # 而把结构化结果整个丢给 LLM 又会白烧上下文(实测一次 get_financials 未压缩
+        # 就上万 token,且长序列会把关键的头尾挤出视野)。
+        raw = _structured(await tool.ainvoke(kwargs))
         cache[f"{tool.name}|{json.dumps(kwargs, sort_keys=True, ensure_ascii=False)}"] = raw
-        return raw
+        return _compact(tool.name, raw)
     return StructuredTool.from_function(
         coroutine = _ainvoke,
         name = tool.name,
-        description = tool.description,
+        # 中文描述仍以 mcp_client 的静态定义为准(服务器给的是英文,而 skill 提示词、
+        # 指标口径说明都是中文,单一事实来源在这里)
+        description = _DESC.get(tool.name, tool.description),
         args_schema=tool.args_schema
     )
 
@@ -129,7 +133,42 @@ def _fetch_args(key: str) -> dict[str, Any]:
         return {}
 
 
+def _structured(raw: Any) -> Any:
+    """把 MCP 工具的返回值还原成 structuredContent 那个 dict。
+
+    langchain-mcp-adapters 的工具是 `response_format="content_and_artifact"`
+    (见其 tools.py 的 StructuredTool(...)),但 `ainvoke()` 只回 **content 块** ——
+    `[{"type": "text", "text": "{...}"}]`,structuredContent 在 artifact 里被丢掉了。
+    而下游(`_points_of` / `_compact_financials`)读的是 structuredContent 的结构,
+    拿到 list 就 `AttributeError: 'list' object has no attribute 'get'`。
+
+    文本块里的 JSON 与 structuredContent 逐字节相同(ASX NAB 三个工具实测),
+    所以这里按"解析文本块"还原,与旧版 mcp_client.call_tool 的取值顺序等价:
+    structuredContent(拿不到)→ content[0].text 解析 → 解析不了就 {"text": ...} 原样透传
+    (错误消息走这条,由 _compact 识别并直接给 LLM)。
+    """
+    if isinstance(raw, tuple):          # 万一将来改回 (content, artifact)
+        raw = raw[0]
+    if isinstance(raw, dict):
+        return raw
+    blocks = raw if isinstance(raw, list) else []
+    texts = [b.get("text", "") for b in blocks
+             if isinstance(b, dict) and b.get("type") == "text"]
+    if len(blocks) == 1 and len(texts) == 1:
+        try:
+            parsed = json.loads(texts[0])
+        except json.JSONDecodeError:
+            return {"text": texts[0]}
+        return parsed if isinstance(parsed, dict) else {"text": texts[0]}
+    # 多块/非文本块(图片等)不是本应用的用法:拼成文本透传,不猜结构
+    return {"text": "\n".join(texts) or json.dumps(blocks, ensure_ascii=False)}
+
+
 def _points_of(raw: Any, metric: str) -> dict[str, float | None]:
+    if not isinstance(raw, dict):
+        raise TypeError(
+            f"data_cache 的值应为 get_financials 的 structuredContent(dict),"
+            f"实际是 {type(raw).__name__} —— 工具包装层没还原结构化结果")
     points: dict[str, float | None] = {}
     for date, stmts in ((raw or {}).get("data") or {}).items():
         for metrics in (stmts or {}).values():

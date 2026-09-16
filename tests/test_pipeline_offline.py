@@ -2,8 +2,11 @@
 "LLM 参数 → Python 计算 → state → 报告" 全链路,不需要 LLM 与 MCP。
 
 打桩的是 run_skill_agent(即 LLM 的输出),公式、状态流转、报告生成都是真实代码。
+节点改成 async(agent 化的代价)之后整图必须用 ainvoke,同步 invoke 会撞
+"No synchronous function provided to ..."。
 """
 
+import asyncio
 import copy
 
 import pytest
@@ -72,7 +75,7 @@ def stubbed(monkeypatch):
     """
     fixture_data = copy.deepcopy(WELLS)
 
-    def fake(skill_id, ctx, schema):
+    async def fake(skill_id, ctx, schema):
         key = {
             "01_company_classifier": "classify",
             "02_cost_of_equity": "cost_of_equity",
@@ -102,7 +105,7 @@ def test_graph_runs_end_to_end_and_matches_book(stubbed, tmp_path, monkeypatch):
     from app.graph import build_graph
 
     state = _initial_state(tmp_path, monkeypatch)
-    final = build_graph().invoke(state, config={"recursion_limit": 60})
+    final = asyncio.run(build_graph().ainvoke(state, config={"recursion_limit": 60}))
 
     coef = final["coefficients"]
     # 书中数字:COE 9.6% / 稳定期 8.6% / g 6.13%
@@ -137,7 +140,7 @@ def test_skipped_method_is_excluded(stubbed, tmp_path, monkeypatch):
 
     state = _initial_state(tmp_path, monkeypatch)
     state["methods_skip"] = ["ddm"]
-    final = build_graph().invoke(state, config={"recursion_limit": 60})
+    final = asyncio.run(build_graph().ainvoke(state, config={"recursion_limit": 60}))
     assert "ddm_per_share" not in (final.get("valuation") or {})
     assert final["valuation"]["excess_per_share_perpetuity"] > 0
 
@@ -151,7 +154,7 @@ def test_method_error_does_not_break_graph(stubbed, tmp_path, monkeypatch):
         g_terminal=0.03, roe_terminal=0.086, analysis="故意不自洽",
     )
     state = _initial_state(tmp_path, monkeypatch)
-    final = build_graph().invoke(state, config={"recursion_limit": 60})
+    final = asyncio.run(build_graph().ainvoke(state, config={"recursion_limit": 60}))
     assert any("04 DDM" in e for e in final["errors"])
     assert "ddm_per_share" not in (final.get("valuation") or {})
     assert final["valuation"]["excess_per_share_perpetuity"] > 0
@@ -162,7 +165,7 @@ def test_weighted_mean_computed_by_python(stubbed, tmp_path, monkeypatch):
     from app.graph import build_graph
 
     state = _initial_state(tmp_path, monkeypatch)
-    final = build_graph().invoke(state, config={"recursion_limit": 60})
+    final = asyncio.run(build_graph().ainvoke(state, config={"recursion_limit": 60}))
     val = final["valuation"]
 
     w = stubbed["synthesize"].method_weights
@@ -183,7 +186,7 @@ def test_method_name_weight_keys_are_normalized(stubbed, tmp_path, monkeypatch):
                                    "relative_valuation": 0.25},
                 "value_range_low": 25.0, "value_range_high": 95.0})
     state = _initial_state(tmp_path, monkeypatch)
-    final = build_graph().invoke(state, config={"recursion_limit": 60})
+    final = asyncio.run(build_graph().ainvoke(state, config={"recursion_limit": 60}))
     val = final["valuation"]
 
     assert not any("没有对应的有效方法结果" in x for x in final["warnings"]), \
@@ -202,7 +205,7 @@ def test_unmappable_weight_keys_degrade_to_equal_weight(stubbed, tmp_path, monke
         update={"method_weights": {"foo": 0.5, "bar": 0.5}, "value_range_low": 25.0,
                 "value_range_high": 65.0})
     state = _initial_state(tmp_path, monkeypatch)
-    final = build_graph().invoke(state, config={"recursion_limit": 60})
+    final = asyncio.run(build_graph().ainvoke(state, config={"recursion_limit": 60}))
     assert any("均不匹配" in x for x in final["warnings"])
 
     val = final["valuation"]
@@ -227,7 +230,7 @@ def test_formula_error_triggers_repair_once(tmp_path, monkeypatch):
                "05_reg_capital_fcfe": "reg_capital_fcfe", "06_excess_returns": "excess_returns",
                "07_relative_valuation": "relative", "08_synthesize": "synthesize"}
 
-    def fake(skill_id, ctx, schema, extra_prompt="", allow_tools=True):
+    async def fake(skill_id, ctx, schema, extra_prompt="", allow_tools=True):
         if skill_id == "05_reg_capital_fcfe":
             calls["fcfe"] += 1
             if calls["fcfe"] == 1:
@@ -244,7 +247,7 @@ def test_formula_error_triggers_repair_once(tmp_path, monkeypatch):
     monkeypatch.setattr(nodes, "run_skill_agent", fake)
     monkeypatch.setattr("app.config.REPORT_DIR", str(tmp_path))
     state = _initial_state(tmp_path, monkeypatch)
-    final = build_graph().invoke(state, config={"recursion_limit": 60})
+    final = asyncio.run(build_graph().ainvoke(state, config={"recursion_limit": 60}))
 
     assert calls["fcfe"] == 2, "应恰好触发一次修正调用"
     assert calls["allow_tools"] is False, "修正轮不应再调用工具"
@@ -285,7 +288,7 @@ def test_incoherent_range_triggers_one_repair(tmp_path, monkeypatch):
                "05_reg_capital_fcfe": "reg_capital_fcfe", "06_excess_returns": "excess_returns",
                "07_relative_valuation": "relative", "08_synthesize": "synthesize"}
 
-    def fake(skill_id, ctx, schema, extra_prompt="", allow_tools=True):
+    async def fake(skill_id, ctx, schema, extra_prompt="", allow_tools=True):
         if skill_id == "08_synthesize":
             calls["synth"] += 1
             if calls["synth"] == 1:
@@ -301,7 +304,7 @@ def test_incoherent_range_triggers_one_repair(tmp_path, monkeypatch):
     monkeypatch.setattr(nodes, "run_skill_agent", fake)
     monkeypatch.setattr("app.config.REPORT_DIR", str(tmp_path))
     state = _initial_state(tmp_path, monkeypatch)
-    final = build_graph().invoke(state, config={"recursion_limit": 60})
+    final = asyncio.run(build_graph().ainvoke(state, config={"recursion_limit": 60}))
 
     assert calls["synth"] == 2, "应恰好触发一次区间修正"
     assert calls["allow_tools"] is False, "修正轮不应再调用工具"

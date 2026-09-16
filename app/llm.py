@@ -7,11 +7,15 @@
 
 check_llm() 按 LLM_PROVIDER 探测候选配置,成功即返回 (模型, 配置描述);
 全部失败抛 RuntimeError 并给出诊断提示。
+
+两个构造函数都挂上 llm_log 的回调:模型实例是唯一能覆盖
+"agent 工具循环 + 结构化输出 + 自检 ping"全部调用路径的挂载点(见 app/llm_log.py)。
 """
 
 import logging
 
 import app.config as config
+from app.llm_log import llm_callbacks
 
 logger = logging.getLogger("value_mind.llm")
 
@@ -56,6 +60,7 @@ def _build_openai():
         temperature=config.LLM_TEMPERATURE,
         timeout=config.LLM_TIMEOUT,
         max_retries=2,
+        callbacks=llm_callbacks(),
         **_thinking_disabled_kwargs("openai"),
     )
 
@@ -70,6 +75,7 @@ def _build_anthropic():
         temperature=config.LLM_TEMPERATURE,
         timeout=config.LLM_TIMEOUT,
         max_retries=2,
+        callbacks=llm_callbacks(),
         **_thinking_disabled_kwargs("anthropic"),
     )
 

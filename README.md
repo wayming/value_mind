@@ -43,6 +43,14 @@ PB 回归参数是否可信              →   公平价 = 预测PB × BVPS
 若落在 LLM 自己给的区间之外(报告会印成"区间 53~70,均值 71.4"),回喂一次让它
 **自己决定**是放宽区间还是调权重——这是估值判断,代码不替它选,但必须二者自洽。
 
+第三处在参数**进入** Python 之前:`run_skill_agent()` 的回喂。结构化输出走的是
+ToolStrategy(schema 绑成工具),模型把 4KB 中文散文塞进参数时会写未转义的英文双引号
+(实测 NAB 综合节点 `属"温和增价值"`),args 不是合法 JSON —— 此时 langchain 只把它
+扔进 `invalid_tool_calls` 就返回,**既不报错也不重试**,`structured_response` 静默为 None。
+代码把模型自己的原文 + JSONDecodeError 那句 + `char N` 附近的窗口一起回喂,让它改转义
+而不是重做整份分析;只回喂一次,仍失败才抛。参数超过 8000 字符则退回通用提示词
+(回喂会让输入翻倍)。
+
 **权重键归一** `normalize_weight_keys()`([app/state.py](app/state.py)):LLM 常把方法名
 (`reg_capital_fcfe`)或拼写变体(`excess_share_perpetuity`,少了个 s 又漏了 per)当成结果键
 写进 `method_weights`,导致该方法的结果静默拿不到权重——实测 WFC 上 FCFE 84.11、
@@ -80,6 +88,17 @@ ASX NAB 报告里印的"数据最新 ROE 0.0949"其实是**西太平洋银行的
 时取信息量最大的一份,并把**实际用的** period 回传、写进告警与报告
 (`roe_std_source: 数据序列(roe, period=5y, n=20, 年度口径年化)`),让 σ 可复算、可追溯。
 
+**缓存里存的必须是 structuredContent,不是工具返回的原始块**([app/mcp_tools.py](app/mcp_tools.py))。
+换成 langchain-mcp-adapters 后,工具的 `ainvoke()` 只回 content 块
+(`[{"type":"text","text":"{...}"}]`),structuredContent 被丢在 artifact 里拿不到,
+于是缓存从 dict 变成了 list:`extract_series()` 里读 `raw["data"]` 直接
+`'list' object has no attribute 'get'`——07 相对估值每次运行都失败,03 的 ROE 交叉校验
+则静默跳过(那处 except 只记 debug,报告上完全看不出来)。`_structured()`
+把文本块还原成 structuredContent(三个工具实测与 structuredContent 逐字节相同),
+缓存存 dict、给 LLM 的仍是压缩后的文本(未压缩的一次 `get_financials` 上万 token,
+长序列还会把关键的头尾挤出视野)。这类"形状"错误自己不会叫,所以 `_points_of()`
+现在遇到非 dict 直接抛,而不是继续往下走。
+
 ## 目录
 
 ```
@@ -96,8 +115,9 @@ app/
   skill_loader.py    SKILL.md 加载(YAML frontmatter + 正文)
   report.py          纯 Python markdown 报告
   llm.py             双通道 LLM(auto 探测 openai / anthropic)
+  llm_log.py         全量对话日志(llm.out,YAML 多文档流)
 skills/<NN_name>/SKILL.md   每个节点一份中文分析指导
-tests/               33 个测试
+tests/               85 个测试
 reports/             输出报告
 ```
 
@@ -160,22 +180,95 @@ START → classify(01) → cost_of_equity(02) → dividends_growth(03)
 | `LLM_STRUCTURED_METHOD` | 空(自动) | `function_calling` / `json_schema` / `json_mode`。留空按通道自动选并降级 |
 | `MAX_LLM_STEPS` | `14` | 单节点 LLM 步数上限;超限自动降级为"无工具直接出参数"重试 |
 | `LLM_TEMPERATURE` | `0` | 估值分析要可复现 |
+| `LLM_LOG` | `1` | 每次模型往返追加一条记录到 `llm.out`;`0` 关闭 |
+| `LLM_LOG_PATH` | `<repo>/llm.out` | 日志路径 |
 | `MCP_BASE_URL` | `http://localhost:8081` | |
 | `REPORT_DIR` | `<repo>/reports` | |
 
 CLI 覆盖:`--beta --rf --erp --roe --growth --payout --eps` 直接钉住关键假设;
 `--skip ddm,relative_valuation` 排除方法;`--only cost_of_equity` 单 skill 调试。
 
+## LLM 对话日志(llm.out)
+
+每次模型往返往 `llm.out` 追加一条记录,**内容不截断**:skill 提示词全文、完整消息列表
+(含工具调用与工具返回)、响应正文与 tool_calls、usage、response_metadata 原样保留。
+挂载点在模型实例的 callbacks 上([app/llm.py](app/llm.py)),不在各调用点 ——
+agent 工具循环里的每一次调用、结构化输出那一步、启动自检的 ping 都会被记到,
+以后新增调用点也不会漏。
+
+**格式是 YAML 多文档流,一条记录一个 `---` 文档**(不是 JSON:JSON 的字符串里放不下
+字面换行,正文只能以 `\n` 转义出现,读起来是一整行;YAML 的字面块 `|` 把换行直接写进
+文件,`yaml.safe_load_all` 又能逐字节读回):
+
+```yaml
+---
+seq: 22
+ts: '2026-09-16 11:36:38.976'
+event: end
+skill: 07_relative_valuation
+model: deepseek-flash
+usage: {input_tokens: 13774, output_tokens: 2483, total_tokens: 16257}
+request:
+  messages:
+  - role: system
+    content: |
+      # 相对估值(PE / PB)
+
+      ## 目标
+
+      用股权倍数(不是企业价值倍数)给金融服务公司做相对估值。
+response:
+  generations:
+  - role: ai
+    content: |-
+      1) 当前倍数:pb=1.892、pe=18.994。
+
+      σ 由 Python 从 5 年 ROE 序列计算。
+```
+
+取记录用 `safe_load_all`(会话头是注释,会被自动跳过):
+
+```bash
+python3 -c "
+import yaml
+for r in yaml.safe_load_all(open('llm.out', encoding='utf-8')):
+    if r and r['event'] == 'end':
+        print(r['seq'], r['skill'], r['elapsed_ms'], 'ms', r['usage'])"
+
+# 只看某次对话的完整输入输出(正文是真换行,直接读)
+python3 -c "
+import yaml
+for r in yaml.safe_load_all(open('llm.out', encoding='utf-8')):
+    if r and r.get('skill') == '07_relative_valuation' and r['event'] == 'end':
+        print(r['request']['messages'][-1]['content'][:500])"
+```
+
+两点格式上的取舍:多行正文用字面块,但**碰到块标量不允许的内容**(行尾空格、以空格
+开头等)PyYAML 会退回带引号并转义——那类内容本来就是块标量的禁区,不值得为它牺牲
+其余部分的可读性;**不写 YAML 锚点/别名**(`usage: &id001` 那种),`usage` 与
+`generations[].usage_metadata` 是同一个对象,默认会被写成别名,读到那一行还得往上翻。
+
+排查时最常用的两个字段:
+
+- `skill` —— 这次对话属于哪个节点。只能由调用方注入(`app/nodes.py` 里经
+  `config.metadata.vm_skill` 传),因为 agent 内部的 `langgraph_node` 恒为 `"model"`,
+  光靠它分不出 ddm 还是 fcfe。
+- `event` —— `end` / `error`。失败的那次对话同样落盘(输入 + 报错原文),
+  自检时哪个候选端点失败、为什么失败,都在这里。
+
+两点代价:文件长得很快(一次完整估值 = 8 个 skill × 最多 14 步工具循环,几十 MB 量级);
+SDK 内部重试(`max_retries=2`)发生在一次 `_generate` 里,回调看不到,一次调用仍只记一条。
+
 ## 测试
 
 ```bash
-python3 -m pytest tests/ -q      # 65 passed
+python3 -m pytest tests/ -q
 ```
 
 - [tests/test_formulas.py](tests/test_formulas.py) — 29 个,用书中数字锁死公式
   (COE 9.6%、g 6.13%、终值派息率 65.12%、再投资 170 万、超额回报 28.38/股 …),
   以及口径年化(含"σ 不年化会抬高预测 PB"的反向偏差、口径不能由日期推断的反例)
-- [tests/test_pipeline_offline.py](tests/test_pipeline_offline.py) — 9 个,打桩 LLM 输出跑通整图:
+- [tests/test_pipeline_offline.py](tests/test_pipeline_offline.py) — 9 个,打桩 LLM 输出跑通整图(节点全异步,故走 `ainvoke`):
   含两处修复回路(公式报错、区间与权重不自洽)、权重键归一与不可归一时的等权降级、
   单方法报错不拖垮全图
 - [tests/test_state_keys.py](tests/test_state_keys.py) — 8 个,权重键归一的边界:
@@ -184,7 +277,16 @@ python3 -m pytest tests/ -q      # 65 passed
   method 选择与 400 降级、非协议错误不掩盖
 - [tests/test_extract_series.py](tests/test_extract_series.py) — 7 个,序列归属与取数选择:
   同业公司的同名指标不得并进目标公司、声明的窗口有对应抓取就必须用它、全空抓取不靠点数胜出
-- [tests/test_mcp_tools.py](tests/test_mcp_tools.py) — 5 个,打真实 MCP
+- [tests/test_mcp_tools.py](tests/test_mcp_tools.py) — 7 个,打真实 MCP(5 个)+
+  工具返回值形状的离线回归(2 个:文本块还原成结构化结果供缓存用、纯文本错误原样透传)
+- [tests/test_llm_log.py](tests/test_llm_log.py) — 11 个,llm.out 全量日志(离线喂原始事件):
+  不截断、**正文的 `\n` 落盘是真换行(含空行与缩进)且能原样读回**、按 run_id 配对
+  (含 end 乱序到达)、失败落盘、凭证不落盘、写不进去也不抛、并发扇出不交错,以及
+  "agent 内部调用靠模型构造时的回调才记得到 + skill 归属靠 `config.metadata` 注入"
+  这两条挂载前提
+- [tests/test_skill_agent_retry.py](tests/test_skill_agent_retry.py) — 7 个,坏 JSON 的回喂:
+  回喂模型自己的原文与出错位置、只取 JSONDecodeError 关键句、过大参数不翻倍输入、
+  "压根没调工具"是另一种话术、只试一次,以及既有的步数耗尽降级不被改坏
 
 ## 两处书中勘误(已在公式与 skill 中按正确值实现)
 
