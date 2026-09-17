@@ -16,7 +16,7 @@ import logging
 import re
 from typing import Annotated, Any, NotRequired, Sequence, TypedDict
 
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage
 from langgraph.errors import GraphRecursionError
 from langgraph.graph.message import add_messages
 from langchain.agents import create_agent
@@ -24,9 +24,10 @@ from pydantic import BaseModel
 
 import app.config as config
 import app.formulas as F
+import app.series as S
 from app import schemas
 from app.llm import get_model
-from app.mcp_tools import extract_series, make_mcp_tools
+from app.mcp_tools import annual_block, make_mcp_tools
 from app.skill_loader import load_skill
 from app.state import METHOD_VALUE_KEYS, ValuationState, normalize_weight_keys
 
@@ -46,11 +47,30 @@ _TOOL_USAGE_GUIDE = """
 
 ## 工具使用规范(通用,覆盖本 skill 中的相关描述)
 
-- **批量取数**:一次 `get_financials` 调用可在 metrics 里传多个指标,尽量一次取全本节点需要的
-  所有指标,不要一个指标调用一次——每个节点能承受的工具调用次数有限,零散调用会耗尽额度。
-- **先确认再取**:不确定指标名时先用 `list_metrics` 看一遍可用指标名,再一次性取数。
-- **数据够用即止**:拿到足以做判断的数据后立即停止调用并输出参数;不要为了"更全"反复试探
-  不同的 period 或指标。缺失的数据用行业常识假设并在理由字段中标注,这比继续调用更有价值。
+- **取数有硬额度**:本节点最多 **2 次** `get_financials`(代码强制:第 3 次会被拒绝并提示你
+  输出参数;完全相同的参数会被去重、不重复返回数据)。所以**第一次就要一次取全**:本节点
+  需要的全部指标 + 参照指标 + 正确的 period。若确实缺一项,第二次补齐;两次之后无论数据
+  是否完美,都必须立即输出参数,缺失部分用行业常识假设并在理由字段里标注为"假设"。
+- **一份抓取要带齐参照指标**:年度口径由 Python 按**同一次返回里**的恒等式判定
+  (pb/pe ÷ roe、roe ÷ (净收益/净资产)),所以取流量指标(dps、epsBasic、netinccmn)时,
+  **同一次调用里要带上 roe、netinccmn(净收益)与 totalCommonEquity(净资产)**;取 roe 时
+  带上 **pb 与 pe**(roe 自己的年度基准只能由 pb/pe ÷ roe 判定)。拆开取(例如先取
+  pe/pb/roe、再取 roe/dps)时,缺参照的那份判不出口径,只能按原值用。
+- **不要用不同 period 反复试探**:工具返回的序列**只保留最近 12 个观测**(更早的点被省略,
+  返回里有 `_truncated`/`_note` 说明)。换 period 或换窗口只会换一批被省略的点,**不会**多出
+  中间年份。需要逐年年度值(如 `dps_by_year`)时,直接用上下文「Python 判定口径后的年度数据」
+  里每条指标的 **`by_year`**(逐年观测、已年化),不要从原始序列推算,更不要靠再抓一次去找。
+- **上下文里已有的数据不必再抓**:各 skill 结论与年度数据块都是权威输入,不要为了"再确认
+  一次"重复调用;重复调用会被去重并回一行提示,白白浪费一步。
+- **先确认再取**:不确定指标名时先用 `list_metrics` 看一遍可用指标名,再一次性取数(同一个
+  节点内不要重复调 `list_metrics`)。
+- **区分"数据"与"假设"**:参数里凡不是来自 MCP 或上下文数据的(MCP 没有该指标,如 β、Rf、
+  ERP;或数据缺失),都要在对应的理由/analysis 字段里写明是**假设**及其依据。报告会按
+  Python 的核对结果逐字段标注来源,不要把自己的假设说成"由数据计算得出"。
+- **口径以 Python 给的为准**:上下文里若出现「Python 判定口径后的年度数据」,那些数值已经
+  换算到 12 个月(年度)口径,并附了口径判定依据与被修正的点。**直接采用,不要再对它做
+  ×4/×2 换算,也不要靠数值量级自己猜口径**。MCP 返回的原始序列口径混杂(同一序列里可能
+  前几年是年报值 ÷4、之后是 12 个月 TTM),靠量级猜会静默错 4 倍。
 - **调用失败不要重试超过一次**:工具返回错误说明时,换指标或换 period 重试一次即可,仍失败则
   改用假设并标注。
 - **文字字段里的引号**:输出结构化参数时,文字字段(analysis、各类理由/说明)内**不要出现英文
@@ -58,14 +78,17 @@ _TOOL_USAGE_GUIDE = """
   失败过一次);需要引号时用中文引号「」。
 """
 
-_STRUCTURED_INSTRUCTION = (
-    "分析完成后,输出结构化的参数对象。"
-    "只输出参数值,不要重复分析过程;绝对不要自己计算任何数值——"
-    "所有公式(股权成本、增长率、折现、倍数等)都由外部 Python 代码用你给的参数计算。"
-    "百分比一律用小数表示(如 9.6% 写作 0.096),金额用与数据源一致的货币单位。"
-    "所有文字字段(analysis、各类理由/说明字段)一律用中文撰写,"
-    "公司名与指标名可保留英文原名。"
-)
+_NO_TOOLS_NOTE = """
+
+---
+
+## 本节点不提供数据工具
+
+本节点的全部输入(各方法结果、各个 skill 的结论与参数、全局参数)已在上文给全,**没有绑定
+任何 MCP 工具**,调用它们不会有响应。请直接基于上文数据输出结构化参数;确实缺某个数字时
+用合理假设代替,并在相应理由/analysis 字段里标注为假设。所有数据都已由上游节点取过,
+重复抓取只会浪费步数与上下文。
+"""
 
 
 class _NodeState(TypedDict):
@@ -159,7 +182,9 @@ async def run_skill_agent(
         tools = []
 
     model = get_model()
-    prompt = doc.body + _TOOL_USAGE_GUIDE + extra_prompt
+    # 无工具节点(08 综合、修正模式)不能用"工具使用规范":那份规范在教它什么时候取数,
+    # 而它压根没有工具 —— 实测 08 就是这么去调 get_data_period/get_financials 的
+    prompt = doc.body + (_TOOL_USAGE_GUIDE if allow_tools else _NO_TOOLS_NOTE) + extra_prompt
     msg = HumanMessage(content=json.dumps(ctx, ensure_ascii=False, indent=2))
     limit = config.MAX_LLM_STEPS * 2 + 2
 
@@ -229,6 +254,137 @@ def _base_ctx(state: ValuationState) -> dict:
     if state.get("period_hint"):
         ctx["建议的数据窗口(period 参数)"] = state["period_hint"]
     return ctx
+
+
+_ANNUAL_KEY = "Python 判定口径后的年度数据(直接采用,不要自己换算)"
+
+
+def _merged_cache(state: ValuationState, cache: dict) -> dict:
+    """本节点新抓的 + 之前节点抓的。口径归一化要跨指标比对,手上多一份判得更准。"""
+    return {**(state.get("data_cache") or {}), **cache}
+
+
+def _annual_ctx(state: ValuationState, metrics: Sequence[str]) -> dict[str, Any]:
+    """把**年度口径**数据放进上下文:口径由代码按恒等式判定(app/series.py),不让模型猜。
+
+    MCP 的流量指标不保证同一种口径,同一条序列里能混着两种(实测 ASX:NAB 前几年是年报值
+    ÷4、之后是 12 个月 TTM)。LLM 只能靠量级猜,而量级正是被口径污染的那个东西 —— 实测
+    NAB 的 dps/eps 就这样被当成单季值、DDM 的整条预测股息序列缩到 1/4。
+
+    这里在节点启动前就把归一化后的最新值与判定依据交给它,模型只读不换算。缓存里还没有
+    该公司数据时返回空字典(工具额度仍留着,LLM 照常自己取数),注入失败也不拖垮节点。
+    """
+    cache = state.get("data_cache") or {}
+    if not cache:
+        return {}
+    try:
+        block, _ = annual_block(cache, state["exchange"], state["code"],
+                                period=state.get("period_hint"), metrics=tuple(metrics))
+        described = S.describe(block, metrics)
+    except Exception as e:  # noqa: BLE001 —— 注入是加分项,不该让节点失败
+        logger.warning("年度口径数据注入跳过: %s", e)
+        return {}
+    return {_ANNUAL_KEY: described} if described else {}
+
+
+def _scale_warnings(
+    block: dict[str, Any],
+    pairs: Sequence[tuple[str, float | None, str | None]],
+) -> list[str]:
+    """核对 LLM 填的标量与数据里的年度值:pairs = [(字段名, 值, 指标名)]。
+
+    差着整倍数(2 倍/4 倍)基本只可能是口径没换算。**只告警不覆盖**:模型可能确实在用
+    归一化后的调整值(危机年 ROE、一次性重组后的 EPS),代码无从判断哪个才是它的本意,
+    但"恰好 4 倍"必须报出来,否则估值会静默缩水到 1/4。
+    """
+    out: list[str] = []
+    for label, value, metric in pairs:
+        s = block.get(metric)
+        latest = s.latest() if s is not None else None
+        if latest is None or not value:
+            continue
+        factor = S.scale_mismatch(value, latest[1])
+        if factor:
+            out.append(
+                f"{label} {value:g} 恰为数据年度值 {latest[1]:g}({metric}, {latest[0]}, "
+                f"口径={s.basis})的 {factor:g} 倍,疑似把未年化的值直接代入 —— 请核对该字段"
+            )
+    return out
+
+
+def _source_row(block: dict[str, Any], metric: str | None, label: str,
+                value: float | None) -> dict[str, Any]:
+    """一个参数值的来源判定:数据里来的、模型调过的、还是纯假设。"""
+    if metric is None:
+        return {"field": label, "value": value, "source": "LLM 假设",
+                "note": "MCP 无对应指标(如 β/Rf/ERP),依据见该字段的理由说明"}
+    s = block.get(metric)
+    latest = s.latest() if s is not None else None
+    if latest is None:
+        return {"field": label, "value": value, "source": "LLM 假设",
+                "note": f"MCP 没有 {metric} 或本次未取到"}
+    date, ref = latest
+    factor = S.scale_mismatch(value, ref)
+    if factor:
+        return {"field": label, "value": value, "source": f"MCP {metric}",
+                "note": f"⚠️ 恰为数据年度值 {ref:g}({date})的 {factor:g} 倍,疑似未年化"}
+    if value and ref and abs(value - ref) / abs(ref) > 0.02:
+        return {"field": label, "value": value, "source": f"MCP {metric} + LLM 判断",
+                "note": f"数据年度值 {ref:g}({date}, {s.basis}),此处偏离 "
+                        f"{(value - ref) / ref * 100:+.1f}%(归一化/判断),须有理由"}
+    return {"field": label, "value": value, "source": f"MCP {metric}",
+            "note": f"与数据年度值 {ref:g}({date}, {s.basis})一致"}
+
+
+def _dps_year_rows(params: Any, dps_series: Any) -> list[tuple[str, float, str, float, float | None]]:
+    """逐年核对 LLM 填的 `dps_by_year`:返回 [(年, 值, 对上的观测日, 该观测值, 整倍数标记)]。
+
+    配对要取**该年最接近的观测**,不是"该年最后一个":一年里可能有多个观测(实测 CBA 每年
+    6 月与 12 月各一个),模型按财年取了 6 月那个(4.65,正确),而拿 max(日期) 去比就变成
+    "4.65↔4.75(2024-12-31)" —— 报告把正确取值写成了偏离。它其实是从上下文 `by_year` 里
+    按财年挑的,这正是我们要求它做的事。
+
+    标记位:None = 与某个观测一致;2.0/4.0 等 = 恰好是某个观测的整倍数(疑似未年化);
+    0.0 = 当年观测都对不上(那既不是年度值也不是它的整倍数,得让读者自己看)。
+    """
+    rows: list[tuple[str, float, str, float, float | None]] = []
+    for year, value in sorted((getattr(params, "dps_by_year", None) or {}).items()):
+        if dps_series is None or value is None:
+            continue
+        obs = {d: v for d, v in dps_series.values.items() if str(d).startswith(str(year))}
+        if not obs:
+            continue
+        date, ref = min(obs.items(), key=lambda kv: abs(value - kv[1]))
+        factor: float | None = None
+        if not ref or abs(value - ref) / abs(ref) > 0.02:
+            factor = next((f for v in obs.values() if (f := S.scale_mismatch(value, v))), 0.0)
+        rows.append((str(year), float(value), date, float(ref), factor))
+    return rows
+
+
+def _data_checks(
+    state: ValuationState, cache: dict, *pairs: tuple[str, float | None, str | None]
+) -> tuple[list[str], list[dict[str, Any]]]:
+    """节点算完后,用数据里的年度值核一遍 LLM 填的关键标量(pairs = (字段名, 值, 指标名))。
+
+    两个用途共用同一批 pairs,因为回答的是同一个问题——这个数字是从数据里来的,还是模型
+    自己填的?
+      - **告警**:差着整倍数(2/4 倍)基本只可能是口径没换算,必须报出来;
+      - **来源核对行**(进报告):哪些与 MCP 年度值一致、哪些是 LLM 的归一化判断、
+        哪些 MCP 根本没有(β/Rf/ERP 这类只能是假设)。读报告的人得能分清数据与猜测。
+    指标名给 None 表示"数据源没有对应指标",只进来源核对,不产生口径告警。
+    """
+    provenance: list[dict[str, Any]] = []
+    try:
+        block, _ = annual_block(_merged_cache(state, cache), state["exchange"], state["code"],
+                                period=state.get("period_hint"))
+    except Exception as e:  # noqa: BLE001 —— 核对失败不该影响已经算出来的估值
+        logger.warning("年度口径核对跳过: %s", e)
+        return [], [_source_row({}, m, label, v) for label, v, m in pairs if v is not None]
+    for label, value, metric in pairs:
+        if value is not None:
+            provenance.append(_source_row(block, metric, label, value))
+    return _scale_warnings(block, list(pairs)), provenance
 
 
 def _skill_brief(state: ValuationState, name: str) -> dict:
@@ -303,8 +459,12 @@ async def cost_of_equity_node(state: ValuationState) -> dict:
         "beta_effective": beta_eff,
         "formula": "COE = Rf + β × ERP",
     }
+    # β/Rf/ERP 数据源里一个都没有(MCP 只有公司财务指标,无市场/宏观序列):报告里必须
+    # 标成假设,不能让读者以为它们是从数据算出来的 —— skill 02 也要求 beta_source 写清依据
+    provenance = [_source_row({}, None, name, getattr(params, name))
+                  for name in ("beta", "beta_risk_adjustment", "rf", "erp")]
     skill_out = _write(state, "cost_of_equity", params=params.model_dump(), results=results,
-                       analysis=params.analysis, error=None)
+                       analysis=params.analysis, error=None, provenance=provenance)
     return {
         **skill_out,
         "coefficients": {
@@ -327,6 +487,9 @@ async def dividends_growth_node(state: ValuationState) -> dict:
         k: v for k, v in (state.get("coefficients") or {}).items()
         if k in ("coe_high", "coe_terminal", "rf", "erp")
     }
+    # 派息率与增长率全靠每股序列与 ROE,口径错了整条估值都错 —— 先把归一化后的
+    # 年度值(含判定依据)放进去,LLM 只读不猜。
+    ctx.update(_annual_ctx(state, ("dps", "epsBasic", "payoutratio", "roe", "dividendGrowth")))
     try:
         params, cache = await run_skill_agent("03_dividends_growth", ctx, schemas.DividendsGrowthParams)
     except Exception as e:  # noqa: BLE001
@@ -345,28 +508,50 @@ async def dividends_growth_node(state: ValuationState) -> dict:
     except Exception as e:  # noqa: BLE001
         return {"errors": [f"03 增长公式失败:{e}"], **_write(state, "dividends_growth", error=str(e))}
 
-    # Python 从 MCP 缓存序列计算 ROE 统计量,交叉校验 LLM 的归一化 ROE(LLM 不手算)。
-    # 口径由 LLM 声明(数据源对不同公司的约定不同,日期推不出来),Python 按声明年化,
-    # 保证与年度口径的归一化 ROE 可比。
+    # Python 从 MCP 缓存算 ROE 统计量,交叉校验 LLM 的归一化 ROE(LLM 不手算)。
+    # 口径由 app/series.py 按尺度无关的恒等式判定(Python 算,不问 LLM),序列已年化,
+    # 与"必须是年度口径"的归一化 ROE 直接可比。
     roe_stats: dict[str, Any] = {}
+    block: dict[str, Any] = {}
+    series = None
     try:
-        series, meta = extract_series(cache, "roe", state["exchange"], state["code"])
-        if any(v is not None for v in series.values()):
-            roe_stats = F.ratio_series_stats(series, params.roe_series_basis)
+        block, meta = annual_block(_merged_cache(state, cache), state["exchange"],
+                                   state["code"], metric="roe")
+        series = block.get("roe")
+        if series is not None and series.values:
+            roe_stats = series.stats()
             roe_stats["series_source"] = meta["source"]
-            conflict = F.basis_conflict(roe_stats)
-            if conflict:
-                warnings.append(f"ROE 序列{conflict},已按声明口径计算,请核对")
-            basis = (f"数据最新 ROE {F.pct(roe_stats['raw_latest'])}"
-                     f"({roe_stats['frequency']}口径 ×{roe_stats['periods_per_year']:g} "
-                     f"年化为 {F.pct(roe_stats['latest'])})")
-            if abs(params.roe_normalized - roe_stats["latest"]) > 0.05:
+            latest_date, latest_roe = series.latest()
+            basis = f"数据最新 ROE {F.pct(latest_roe)}({latest_date}, {series.basis})"
+            if not series.determined:
+                warnings.append(
+                    f"ROE 序列口径未能锚定(pb/pe/roe 缺失或吸附不上),{basis} 按原值使用,"
+                    "请核对是否已是年度口径"
+                )
+            if abs(params.roe_normalized - latest_roe) > 0.05:
                 warnings.append(
                     f"归一化 ROE {F.pct(params.roe_normalized)} 与{basis} 相差超过 5 个百分点,"
                     "请确认归一化理由是否充分"
                 )
     except Exception as e:  # noqa: BLE001
-        logger.debug("ROE 序列统计跳过: %s", e)
+        # 不再静默:这条交叉校验是唯一能拦住"归一化 ROE 用错口径"的闸,跳过必须说出来
+        logger.warning("ROE 序列统计跳过(交叉校验缺失): %s", e)
+        warnings.append(f"ROE 数据序列统计失败({e}),归一化 ROE 未经数据交叉校验")
+
+    # 逐年股息对一下年度序列:LLM 若把未年化的值填进 dps_by_year,派息率会跟着错
+    dps_series = (block or {}).get("dps")
+    year_rows = _dps_year_rows(params, dps_series)
+    for year, value, date, ref, factor in year_rows:
+        if factor:
+            warnings.append(
+                f"dps_by_year[{year}] {value:g} 恰为数据年度值 {ref:g}({date})的 "
+                f"{factor:g} 倍,疑似未年化"
+            )
+        elif factor == 0.0:
+            warnings.append(
+                f"dps_by_year[{year}] {value:g} 与当年观测都对不上(最接近 {ref:g}({date})),"
+                "既不是年度值也不是它的整倍数,请核对这个数从哪来"
+            )
 
     results = {
         "growth": growth,
@@ -375,15 +560,35 @@ async def dividends_growth_node(state: ValuationState) -> dict:
         "roe_stats_from_data": roe_stats,
         "formula": "g = ROE × (1 − 派息率)",
     }
+    provenance = [
+        _source_row(block or {}, "roe", "roe_normalized", params.roe_normalized),
+        _source_row(block or {}, "sharesBasic", "shares_outstanding",
+                    params.shares_outstanding),
+        # payout_ratio 故意不拿 payoutratio 指标核对:该指标单期口径失真,skill 明确要求
+        # 用年度 dps/eps 自算,差异是设计而非问题(拿指标对会把正确做法标成偏离)
+        {"field": "payout_ratio", "value": params.payout_ratio,
+         "source": "LLM 计算(年度 dps/年度 eps)",
+         "note": f"口径:{params.payout_basis or '未说明'};数据源 payoutratio 单期值不可用"},
+    ]
+    if year_rows:
+        prov_years = [f"{y}:{v:g}↔{r:g}({d})" for y, v, d, r, _f in year_rows]
+        bad = [f"{y}({f:g} 倍,疑似未年化)" if f else
+               f"{y}(对不上当年观测,最接近 {r:g}({d}))"
+               for y, _v, d, r, f in year_rows if f is not None]
+        provenance.append({
+            "field": "dps_by_year", "value": None,
+            "source": "MCP dps(年度口径)",
+            "note": ("逐年核对(取该年最接近的观测):" + "、".join(prov_years))
+                    + (f";⚠️ {'、'.join(bad)}" if bad else ""),
+        })
     skill_out = _write(state, "dividends_growth", params=params.model_dump(), results=results,
-                       analysis=params.analysis, warnings=warnings, error=None)
+                       analysis=params.analysis, warnings=warnings, error=None,
+                       provenance=provenance)
     return {
         **skill_out,
         "coefficients": {
             "growth": growth, "payout": payout, "payout_plain": params.payout_ratio,
             "roe_normalized": params.roe_normalized,
-            # 口径是 skill 03 的判断产物,存进全局参数供节点 07 的回归复用(σ 要与 ROE 同口径)
-            "roe_series_basis": params.roe_series_basis,
             "shares_outstanding": params.shares_outstanding,
             "dividends_reliable": params.dividends_reliable,
         },
@@ -457,6 +662,8 @@ async def ddm_node(state: ValuationState) -> dict:
     ctx["公司分类结论"] = _skill_brief(state, "classify")
     ctx["已定的全局参数"] = state.get("coefficients") or {}
     ctx["股息与增长分析结论"] = _skill_brief(state, "dividends_growth")
+    # eps0 是高增长期整条股息序列的起点:口径错 4 倍,估值就错 4 倍
+    ctx.update(_annual_ctx(state, ("epsBasic", "dps", "payoutratio", "bvps", "roe")))
     try:
         params, cache = await run_skill_agent("04_ddm", ctx, schemas.DdmParams)
     except Exception as e:  # noqa: BLE001
@@ -492,6 +699,12 @@ async def ddm_node(state: ValuationState) -> dict:
         return {"errors": [f"04 DDM 计算失败:{e}"], **_write(state, "ddm", error=str(e))}
 
     warnings = ([r.consistency_warning] if r.consistency_warning else []) + repair_notes
+    wn, provenance = _data_checks(state, cache,
+                                  ("eps0", params.eps0, "epsBasic"),
+                                  ("payout_high", params.payout_high, None),
+                                  ("g_high", params.g_high, None),
+                                  ("g_terminal", params.g_terminal, None))
+    warnings.extend(wn)
     results = {
         "value_per_share": r.value_per_share, "dividends": r.dividends,
         "terminal_price": r.terminal_price, "pv_dividends": r.pv_dividends,
@@ -502,7 +715,8 @@ async def ddm_node(state: ValuationState) -> dict:
     }
     return {
         **_write(state, "ddm", params=params.model_dump(), results=results,
-                 analysis=params.analysis, warnings=warnings, error=None),
+                 analysis=params.analysis, warnings=warnings, error=None,
+                 provenance=provenance),
         "valuation": {"ddm_per_share": r.value_per_share},
         "data_cache": cache,
         "warnings": warnings,
@@ -530,6 +744,8 @@ async def reg_capital_fcfe_node(state: ValuationState) -> dict:
     ctx = _base_ctx(state)
     ctx["公司分类结论"] = _skill_brief(state, "classify")
     ctx["已定的全局参数"] = state.get("coefficients") or {}
+    ctx.update(_annual_ctx(state, ("netinccmn", "totalCommonEquity", "totalAssets",
+                                   "epsBasic", "roe")))
     try:
         params, cache = await run_skill_agent("05_reg_capital_fcfe", ctx, schemas.FcfeParams)
     except Exception as e:  # noqa: BLE001
@@ -565,6 +781,15 @@ async def reg_capital_fcfe_node(state: ValuationState) -> dict:
                 **_write(state, "reg_capital_fcfe", error=str(e))}
 
     warnings: list[str] = list(repair_notes)
+    wn, provenance = _data_checks(
+        state, cache,
+        ("net_income", params.net_income, "netinccmn"),
+        ("equity_current", params.equity_current, "totalCommonEquity"),
+        ("assets", params.assets, "totalAssets"),
+        ("target_capital_ratio", params.target_capital_ratio, None),
+        ("assets_growth", params.assets_growth, None),
+    )
+    warnings.extend(wn)
     cur = params.current_capital_ratio
     if cur is not None and params.target_capital_ratio > cur:
         warnings.append(
@@ -579,7 +804,8 @@ async def reg_capital_fcfe_node(state: ValuationState) -> dict:
         "formula": "再投资 = 目标资本比率 × 新资产 − 现有股权;FCFE = 净收入 − 再投资",
     }
     out = _write(state, "reg_capital_fcfe", params=params.model_dump(), results=results,
-                 analysis=params.analysis, warnings=warnings, error=None)
+                 analysis=params.analysis, warnings=warnings, error=None,
+                 provenance=provenance)
     update: dict[str, Any] = {**out, "data_cache": cache, "warnings": warnings}
     if r.value_per_share:
         update["valuation"] = {"fcfe_per_share": r.value_per_share}
@@ -595,6 +821,7 @@ async def excess_returns_node(state: ValuationState) -> dict:
     ctx["公司分类结论"] = _skill_brief(state, "classify")
     ctx["已定的全局参数"] = state.get("coefficients") or {}
     ctx["股息与增长分析结论"] = _skill_brief(state, "dividends_growth")
+    ctx.update(_annual_ctx(state, ("totalCommonEquity", "bvps", "roe", "epsBasic", "dps")))
     try:
         params, cache = await run_skill_agent("06_excess_returns", ctx, schemas.ExcessParams)
     except Exception as e:  # noqa: BLE001
@@ -635,11 +862,21 @@ async def excess_returns_node(state: ValuationState) -> dict:
                          if coef.get("shares_outstanding") else None),
         "formula": "股权价值 = BV + Σ(ROE_t − COE)×BV_{t-1}/(1+COE)^t",
     }
+    wn, provenance = _data_checks(
+        state, cache,
+        ("bv_equity", params.bv_equity, "totalCommonEquity"),
+        ("bvps", params.bvps, "bvps"),
+        ("roe_current", params.roe_current, "roe"),
+        ("roe_terminal", params.roe_terminal, None),
+        ("years_high", params.years_high, None),
+    )
+    warnings = list(repair_notes) + wn
     update: dict[str, Any] = {
         **_write(state, "excess_returns", params=params.model_dump(), results=results,
-                 analysis=params.analysis, warnings=repair_notes, error=None),
+                 analysis=params.analysis, warnings=warnings, error=None,
+                 provenance=provenance),
         "data_cache": cache,
-        "warnings": repair_notes,
+        "warnings": warnings,
         "valuation": {},
     }
     if perpet.value_per_share:
@@ -657,6 +894,7 @@ async def relative_valuation_node(state: ValuationState) -> dict:
     ctx = _base_ctx(state)
     ctx["公司分类结论"] = _skill_brief(state, "classify")
     ctx["已定的全局参数"] = state.get("coefficients") or {}
+    ctx.update(_annual_ctx(state, ("roe", "pb", "pe", "bvps", "epsBasic")))
     try:
         params, cache = await run_skill_agent("07_relative_valuation", ctx, schemas.RelativeParams)
     except Exception as e:  # noqa: BLE001
@@ -670,46 +908,39 @@ async def relative_valuation_node(state: ValuationState) -> dict:
 
     coef = state.get("coefficients") or {}
     warnings: list[str] = []
-    merged_cache = {**(state.get("data_cache") or {}), **cache}
+    merged_cache = _merged_cache(state, cache)
+    stats: dict[str, Any] = {}
     try:
         _require(params, ["bvps", "roe_series_metric"])
-        series, meta = extract_series(merged_cache, params.roe_series_metric,
-                                      state["exchange"], state["code"],
-                                      period=params.roe_window)
+        block, meta = annual_block(merged_cache, state["exchange"], state["code"],
+                                   period=params.roe_window, metric=params.roe_series_metric)
         # σ 优先由 Python 从真实数据序列计算;取不到才用 LLM 的降级假设(并告警)。
-        # 必须与 ROE 同口径:回归里 ROE 是年度值,故 σ 也要年化,否则 σ 项被缩小 3/4,
-        # 预测 PB 会机械性偏高(季度序列 ×4)。
-        stats: dict[str, Any] = {}
+        # 序列已由 app/series.py 归一化成年度口径(口径按尺度无关的恒等式判定,不问 LLM),
+        # 与回归里的年度 ROE 同口径 —— 否则 σ 项差 4 倍,预测 PB 会机械性偏高。
         try:
+            series = block.get(params.roe_series_metric)
+            if series is None or not series.values:
+                raise F.FormulaError(
+                    f"数据里没有 {params.roe_series_metric} 序列(或无有效观测)")
             if meta["n"] and meta["period"].strip().lower() != (params.roe_window or "").strip().lower():
                 warnings.append(
-                    f"声明的 ROE 窗口 {params.roe_window} 没有对应抓取,σ 改用"
-                    f"{meta['source']} 的序列——若该窗口更长,σ 会偏大/偏小,请核对"
+                    f"声明的 ROE 窗口 {params.roe_window} 没能用上(没有对应抓取,或那一份缺"
+                    f"参照指标判不出口径),σ 改用 {meta['source']} 的序列——窗口不同 σ 会变,"
+                    "请核对"
                 )
-            basis = coef.get("roe_series_basis")
-            if not basis:
+            if not series.determined:
                 warnings.append(
-                    "skill 03 未声明 ROE 序列口径,σ 按原始值(未年化)计算;"
-                    "若数据是单季口径,σ 会被低估、预测 PB 偏高"
+                    f"{params.roe_series_metric} 序列口径未能锚定(pb/pe/roe 缺失或吸附不上),"
+                    "σ 按原值计算,请核对是否已是年度口径"
                 )
-            stats = F.ratio_series_stats(series, basis)
-
-            logger.error(
-                "DEBUG ratio_series_stats: type=%s value=%r",
-                type(stats).__name__,
-                stats,
-            )
-
-            conflict = F.basis_conflict(stats)
-            if conflict:
-                warnings.append(f"ROE 序列{conflict},已按声明口径计算,请核对")
+            stats = series.stats()
             if "std" not in stats:
                 raise F.FormulaError(f"ROE 序列仅 {stats['n']} 个观测值,无法计算 σ")
             std = stats["std"]
             std_source = (f"数据序列({params.roe_series_metric}, {meta['source']}, "
-                          f"{stats['frequency']}口径年化)")
+                          f"{series.basis})")
             series_roe = stats["latest"]
-        except F.FormulaError:
+        except (F.FormulaError, TypeError):
             if params.roe_std_dev_assumed is None:
                 raise
             std = params.roe_std_dev_assumed
@@ -742,8 +973,8 @@ async def relative_valuation_node(state: ValuationState) -> dict:
     results = {
         "roe_used_for_regression": roe_for_reg,
         "roe_std_dev": std, "roe_std_source": std_source, "roe_n": stats.get("n", 0),
-        "roe_series_frequency": stats.get("frequency"),
-        "roe_series_raw_latest": stats.get("raw_latest"),
+        "roe_series_basis": stats.get("basis"),
+        "roe_series_latest": stats.get("latest"),
         "predicted_pb": predicted_pb, "fair_price_per_share": fair_price,
         "pb_current": params.pb_current, "pe_current": params.pe_current,
         "implied_pe": implied_pe,
@@ -760,9 +991,15 @@ async def relative_valuation_node(state: ValuationState) -> dict:
             f"回归所用 ROE 序列样本数 {n_obs}(指标 {params.roe_series_metric}),"
             "样本偏少时 σ 不可靠"
         )
+    wn, provenance = _data_checks(
+        state, cache,
+        ("bvps", params.bvps, "bvps"), ("eps", params.eps, "epsBasic"),
+        ("pb_current", params.pb_current, "pb"), ("pe_current", params.pe_current, "pe"))
+    warnings.extend(wn)
     return {
         **_write(state, "relative_valuation", params=params.model_dump(), results=results,
-                 analysis=params.analysis, warnings=warnings, error=None),
+                 analysis=params.analysis, warnings=warnings, error=None,
+                 provenance=provenance),
         "valuation": {"relative_pb_fair_price": fair_price, "relative_predicted_pb": predicted_pb},
         "data_cache": cache,
         "warnings": warnings,
@@ -865,7 +1102,10 @@ async def synthesize_node(state: ValuationState) -> dict:
                      "excess_returns", "relative_valuation")
     }
     try:
-        params, cache = await run_skill_agent("08_synthesize", ctx, schemas.SynthesisParams)
+        # 综合节点不需要新数据:各方法结果与全部结论都在 ctx 里。实测它仍会去调
+        # get_data_period/get_financials 各一次(重复抓一遍 5y),白烧两步与上万 token
+        params, cache = await run_skill_agent("08_synthesize", ctx, schemas.SynthesisParams,
+                                              allow_tools=False)
     except Exception as e:  # noqa: BLE001
         logger.exception("08 综合失败")
         return {"errors": [f"08 综合失败:{e}"], **_write(state, "synthesize", error=str(e))}

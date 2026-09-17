@@ -57,7 +57,9 @@ FCFE 可视为"潜在股息",替代 DDM 中的股息。
 
 按 schema(FcfeParams)输出:fcfe_applicable、skip_reason、assets、assets_growth、
 target_capital_ratio、current_capital_ratio、equity_current、net_income、ni_growth、
-projection_years、g_terminal、buffer_gap_note、analysis。
+projection_years、g_terminal、coe_terminal(可为 None,缺省沿用高增长期 COE)、buffer_gap_note、analysis。
+assets / equity_current / net_income 取上下文「Python 判定口径后的年度数据」里的值(已年化),
+不要用未换算的原始序列值。
 
 ## 公式(Python 计算,你不需要算)
 

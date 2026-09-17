@@ -19,6 +19,9 @@ description: 超额回报模型:股权价值=账面股权+超额回报现值,超
 ## 数据获取(MCP 工具)
 
 - `get_financials` 取 equity、bvps(每股账面价值)、roe(与 skill 03 的归一化 ROE 对口径)。
+- **口径不用你判断**:上下文「Python 判定口径后的年度数据」里的 equity / bvps / roe 已按
+  年度口径归一化并附判定依据(数据源的 roe 与流量指标口径因公司而异,同一条序列里还能混着
+  两种),直接采用,不要自己换算。账面价值是时点余额,本就不年化。
 - 不需要价格数据。
 
 ## 分析步骤
@@ -53,8 +56,8 @@ description: 超额回报模型:股权价值=账面股权+超额回报现值,超
 
 ## 输出参数
 
-按 schema(ExcessParams)输出:applicable、bv_equity、bvps、roe_current、roe_terminal、
-years_high、years_fade、payout、mean_reversion_rationale、analysis。
+按 schema(ExcessParams)输出:applicable、skip_reason(不适用时必须填)、bv_equity、bvps、
+roe_current、roe_terminal、years_high、years_fade、payout、mean_reversion_rationale、analysis。
 
 ## 公式(Python 计算,你不需要算)
 

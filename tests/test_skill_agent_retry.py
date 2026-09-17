@@ -162,3 +162,29 @@ def test_recursion_downgrade_still_retries_without_tools(harness):
     assert params == {"verdict": "合理"}
     assert harness.created[1]["tools"] == []
     assert "不得再调用任何工具" in harness.prompts()[1]
+
+
+def test_no_tools_node_gets_the_no_tools_note_not_the_tool_guide(harness):
+    """无工具节点(08 综合)不能带"工具使用规范":那份规范在教它什么时候取数,而它没有工具。
+
+    实测 08 就是带着这份规范去调 get_data_period/get_financials 各一次的(重复抓 5y)。
+    """
+    harness.outs.append(_out({"verdict": "合理"}))
+
+    asyncio.run(nodes.run_skill_agent("08_synthesize", {}, dict, allow_tools=False))
+
+    prompt = harness.prompts()[0]
+    assert harness.created[0]["tools"] == []
+    assert "不提供数据工具" in prompt
+    assert "取数有硬额度" not in prompt and "list_metrics" not in prompt
+
+
+def test_tool_node_gets_the_budget_rule(harness):
+    """有工具节点必须看到硬额度与去重规则(账本会强制执行)。"""
+    harness.outs.append(_out({"verdict": "合理"}))
+
+    asyncio.run(nodes.run_skill_agent("03_dividends_growth", {}, dict))
+
+    prompt = harness.prompts()[0]
+    assert "最多 **2 次** `get_financials`" in prompt
+    assert "by_year" in prompt                      # 逐年数据去哪找,而不是换 period 去抓

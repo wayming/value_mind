@@ -1,0 +1,844 @@
+{
+ "exchange": "ASX",
+ "code": "NAB",
+ "period": "all",
+ "raw": {
+  "code": "NAB",
+  "data": {
+   "2016-06-30": {
+    "balance-sheet": {
+     "bvps": 19.005677,
+     "sharesOutTotalCommon": 2647472000,
+     "totalCommonEquity": 50317000000
+    },
+    "income-statement": {
+     "dividendGrowth": null,
+     "dps": null,
+     "epsBasic": null,
+     "netinccmn": null,
+     "payoutratio": null
+    },
+    "ratios": {
+     "marketcap": 65753384659.99999,
+     "pb": 1.281,
+     "pe": null
+    }
+   },
+   "2016-09-30": {
+    "balance-sheet": {
+     "bvps": 19.005677,
+     "sharesOutTotalCommon": 2647472000,
+     "totalCommonEquity": 50317000000
+    },
+    "income-statement": {
+     "dividendGrowth": null,
+     "dps": null,
+     "epsBasic": null,
+     "netinccmn": null,
+     "payoutratio": null
+    },
+    "ratios": {
+     "marketcap": 72389756947,
+     "pb": 1.411,
+     "pe": null,
+     "roe": null
+    }
+   },
+   "2016-12-31": {
+    "balance-sheet": {
+     "bvps": 18.712229,
+     "sharesOutTotalCommon": 2665102000,
+     "totalCommonEquity": 49870000000
+    },
+    "income-statement": {
+     "dividendGrowth": null,
+     "dps": 0.495,
+     "epsBasic": 0.469485,
+     "netinccmn": 1248000000,
+     "payoutratio": 0.92456
+    },
+    "ratios": {
+     "marketcap": 81605386520,
+     "pb": 1.605,
+     "pe": 236.537,
+     "roe": null
+    }
+   },
+   "2017-03-31": {
+    "balance-sheet": {
+     "bvps": 18.712229,
+     "sharesOutTotalCommon": 2665102000,
+     "totalCommonEquity": 49870000000
+    },
+    "income-statement": {
+     "dividendGrowth": null,
+     "dps": 0.495,
+     "epsBasic": 0.469485,
+     "netinccmn": 1248000000,
+     "payoutratio": 0.92456
+    },
+    "ratios": {
+     "marketcap": 88881761231,
+     "pb": 1.748,
+     "pe": 35.61,
+     "roe": 0.11189
+    }
+   },
+   "2017-06-30": {
+    "balance-sheet": {
+     "bvps": 18.809519,
+     "sharesOutTotalCommon": 2675826000,
+     "totalCommonEquity": 50331000000
+    },
+    "income-statement": {
+     "dividendGrowth": null,
+     "dps": 0.495,
+     "epsBasic": 0.503782,
+     "netinccmn": 1345500000,
+     "payoutratio": 0.87482
+    },
+    "ratios": {
+     "marketcap": 78860367855,
+     "pb": 1.537,
+     "pe": 20.529,
+     "roe": 0.11239
+    }
+   },
+   "2017-09-30": {
+    "balance-sheet": {
+     "bvps": 18.809519,
+     "sharesOutTotalCommon": 2675826000,
+     "totalCommonEquity": 50331000000
+    },
+    "income-statement": {
+     "dividendGrowth": null,
+     "dps": 0.495,
+     "epsBasic": 0.503782,
+     "netinccmn": 1345500000,
+     "payoutratio": 0.87482
+    },
+    "ratios": {
+     "marketcap": 84267079061,
+     "pb": 1.642,
+     "pe": 16.246,
+     "roe": 0.13009
+    }
+   },
+   "2017-12-31": {
+    "balance-sheet": {
+     "bvps": 18.939854,
+     "sharesOutTotalCommon": 2714646000,
+     "totalCommonEquity": 51415000000
+    },
+    "income-statement": {
+     "dividendGrowth": null,
+     "dps": 0.495,
+     "epsBasic": 0.469433,
+     "netinccmn": 1267000000,
+     "payoutratio": 0.68486
+    },
+    "ratios": {
+     "marketcap": 80123126834,
+     "pb": 1.529,
+     "pe": 15.391,
+     "roe": 0.12951
+    }
+   },
+   "2018-03-31": {
+    "balance-sheet": {
+     "bvps": 18.939854,
+     "sharesOutTotalCommon": 2714646000,
+     "totalCommonEquity": 51415000000
+    },
+    "income-statement": {
+     "dividendGrowth": null,
+     "dps": 0.495,
+     "epsBasic": 0.469433,
+     "netinccmn": 1267000000,
+     "payoutratio": 0.68486
+    },
+    "ratios": {
+     "marketcap": 77301425462,
+     "pb": 1.475,
+     "pe": 14.795,
+     "roe": 0.11092
+    }
+   },
+   "2018-06-30": {
+    "balance-sheet": {
+     "bvps": 18.972834,
+     "sharesOutTotalCommon": 2726319000,
+     "totalCommonEquity": 51726000000
+    },
+    "income-statement": {
+     "dividendGrowth": null,
+     "dps": 0.495,
+     "epsBasic": 0.536962,
+     "netinccmn": 1460000000,
+     "payoutratio": 0.82531
+    },
+    "ratios": {
+     "marketcap": 74408190083,
+     "pb": 1.412,
+     "pe": 13.935,
+     "roe": 0.10977
+    }
+   },
+   "2018-09-30": {
+    "balance-sheet": {
+     "bvps": 18.972834,
+     "sharesOutTotalCommon": 2726319000,
+     "totalCommonEquity": 51726000000
+    },
+    "income-statement": {
+     "dividendGrowth": null,
+     "dps": 0.495,
+     "epsBasic": 0.536962,
+     "netinccmn": 1460000000,
+     "payoutratio": 0.82531
+    },
+    "ratios": {
+     "marketcap": 75804204354,
+     "pb": 1.438,
+     "pe": 13.899,
+     "roe": 0.11679
+    }
+   },
+   "2018-12-31": {
+    "balance-sheet": {
+     "bvps": 19.291627,
+     "sharesOutTotalCommon": 2803496000,
+     "totalCommonEquity": 54084000000
+    },
+    "income-statement": {
+     "dividendGrowth": -0.16162,
+     "dps": 0.415,
+     "epsBasic": 0.479317,
+     "netinccmn": 1321000000,
+     "payoutratio": 0.65739
+    },
+    "ratios": {
+     "marketcap": 66666627129,
+     "pb": 1.232,
+     "pe": 12.104,
+     "roe": 0.11644
+    }
+   },
+   "2019-03-31": {
+    "balance-sheet": {
+     "bvps": 19.291627,
+     "sharesOutTotalCommon": 2803496000,
+     "totalCommonEquity": 54084000000
+    },
+    "income-statement": {
+     "dividendGrowth": -0.16162,
+     "dps": 0.415,
+     "epsBasic": 0.479317,
+     "netinccmn": 1321000000,
+     "payoutratio": 0.65739
+    },
+    "ratios": {
+     "marketcap": 70844829660,
+     "pb": 1.31,
+     "pe": 12.737,
+     "roe": 0.1088
+    }
+   },
+   "2019-06-30": {
+    "balance-sheet": {
+     "bvps": 19.33441,
+     "sharesOutTotalCommon": 2875495000,
+     "totalCommonEquity": 55596000000
+    },
+    "income-statement": {
+     "dividendGrowth": -0.16162,
+     "dps": 0.415,
+     "epsBasic": 0.365221,
+     "netinccmn": 1036500000,
+     "payoutratio": null
+    },
+    "ratios": {
+     "marketcap": 74910794624,
+     "pb": 1.347,
+     "pe": 14.578,
+     "roe": 0.10741
+    }
+   },
+   "2019-09-30": {
+    "balance-sheet": {
+     "bvps": 19.33441,
+     "sharesOutTotalCommon": 2875495000,
+     "totalCommonEquity": 55596000000
+    },
+    "income-statement": {
+     "dividendGrowth": -0.16162,
+     "dps": 0.415,
+     "epsBasic": 0.365221,
+     "netinccmn": 1036500000,
+     "payoutratio": 0.71055
+    },
+    "ratios": {
+     "marketcap": 85392645733,
+     "pb": 1.536,
+     "pe": 18.111,
+     "roe": 0.10939
+    }
+   },
+   "2019-12-31": {
+    "balance-sheet": {
+     "bvps": 19.599035,
+     "sharesOutTotalCommon": 2978565000,
+     "totalCommonEquity": 58377000000
+    },
+    "income-statement": {
+     "dividendGrowth": -0.63855,
+     "dps": 0.15,
+     "epsBasic": 0.221137,
+     "netinccmn": 645500000,
+     "payoutratio": 1.13557
+    },
+    "ratios": {
+     "marketcap": 72408136863,
+     "pb": 1.24,
+     "pe": 17.925,
+     "roe": 0.1079
+    }
+   },
+   "2020-03-31": {
+    "balance-sheet": {
+     "bvps": 19.599035,
+     "sharesOutTotalCommon": 2978565000,
+     "totalCommonEquity": 58377000000
+    },
+    "income-statement": {
+     "dividendGrowth": -0.63855,
+     "dps": 0.15,
+     "epsBasic": 0.221137,
+     "netinccmn": 645500000,
+     "payoutratio": 1.13557
+    },
+    "ratios": {
+     "marketcap": 49650105934,
+     "pb": 0.85,
+     "pe": 14.759,
+     "roe": 0.05408
+    }
+   },
+   "2020-06-30": {
+    "balance-sheet": {
+     "bvps": 18.660756,
+     "sharesOutTotalCommon": 3284540000,
+     "totalCommonEquity": 61292000000
+    },
+    "income-statement": {
+     "dividendGrowth": -0.63855,
+     "dps": 0.15,
+     "epsBasic": 0.191016,
+     "netinccmn": 614500000,
+     "payoutratio": 0.66774
+    },
+    "ratios": {
+     "marketcap": 59743772933,
+     "pb": 0.975,
+     "pe": 20.307,
+     "roe": 0.05279
+    }
+   },
+   "2020-09-30": {
+    "balance-sheet": {
+     "bvps": 18.660756,
+     "sharesOutTotalCommon": 3284540000,
+     "totalCommonEquity": 61292000000
+    },
+    "income-statement": {
+     "dividendGrowth": -0.63855,
+     "dps": 0.15,
+     "epsBasic": 0.191016,
+     "netinccmn": 614500000,
+     "payoutratio": 0.66774
+    },
+    "ratios": {
+     "marketcap": 58300041655,
+     "pb": 0.951,
+     "pe": 23.135,
+     "roe": 0.06541
+    }
+   },
+   "2020-12-31": {
+    "balance-sheet": {
+     "bvps": 18.702619,
+     "sharesOutTotalCommon": 3292373000,
+     "totalCommonEquity": 61576000000
+    },
+    "income-statement": {
+     "dividendGrowth": 1,
+     "dps": 0.3,
+     "epsBasic": 0.485709,
+     "netinccmn": 1597500000,
+     "payoutratio": 0.27494
+    },
+    "ratios": {
+     "marketcap": 74389173668,
+     "pb": 1.208,
+     "pe": 21.425,
+     "roe": 0.06386
+    }
+   },
+   "2021-03-31": {
+    "balance-sheet": {
+     "bvps": 18.702619,
+     "sharesOutTotalCommon": 3292373000,
+     "totalCommonEquity": 61576000000
+    },
+    "income-statement": {
+     "dividendGrowth": 1,
+     "dps": 0.3,
+     "epsBasic": 0.485709,
+     "netinccmn": 1597500000,
+     "payoutratio": 0.27494
+    },
+    "ratios": {
+     "marketcap": 85618783484,
+     "pb": 1.39,
+     "pe": 19.353,
+     "roe": 0.10515
+    }
+   },
+   "2021-06-30": {
+    "balance-sheet": {
+     "bvps": 19.16339,
+     "sharesOutTotalCommon": 3275986000,
+     "totalCommonEquity": 62779000000
+    },
+    "income-statement": {
+     "dividendGrowth": 1.23333,
+     "dps": 0.335,
+     "epsBasic": 0.479489,
+     "netinccmn": 1578000000,
+     "payoutratio": 0.57034
+    },
+    "ratios": {
+     "marketcap": 86328118080,
+     "pb": 1.375,
+     "pe": 16.024,
+     "roe": 0.10491
+    }
+   },
+   "2021-09-30": {
+    "balance-sheet": {
+     "bvps": 19.16339,
+     "sharesOutTotalCommon": 3275986000,
+     "totalCommonEquity": 62779000000
+    },
+    "income-statement": {
+     "dividendGrowth": 1.23333,
+     "dps": 1.27,
+     "epsBasic": 1.930395,
+     "netinccmn": 6351000000,
+     "payoutratio": 0.42143
+    },
+    "ratios": {
+     "marketcap": 91164468009,
+     "pb": 1.452,
+     "pe": 14.354,
+     "roe": 0.10431
+    }
+   },
+   "2021-12-31": {
+    "balance-sheet": {
+     "bvps": 19.000902,
+     "sharesOutTotalCommon": 3211900000,
+     "totalCommonEquity": 61029000000
+    },
+    "income-statement": {
+     "dividendGrowth": 0.21667,
+     "dps": 1.335,
+     "epsBasic": 1.98979,
+     "netinccmn": 6529000000,
+     "payoutratio": 0.49124
+    },
+    "ratios": {
+     "marketcap": 93885582744,
+     "pb": 1.538,
+     "pe": 14.38,
+     "roe": 0.10834
+    }
+   },
+   "2022-03-31": {
+    "balance-sheet": {
+     "bvps": 19.000902,
+     "sharesOutTotalCommon": 3211900000,
+     "totalCommonEquity": 61029000000
+    },
+    "income-statement": {
+     "dividendGrowth": 0.21667,
+     "dps": 1.4,
+     "epsBasic": 2.049503,
+     "netinccmn": 6707000000,
+     "payoutratio": 0.55748
+    },
+    "ratios": {
+     "marketcap": 103914180253,
+     "pb": 1.703,
+     "pe": 15.493,
+     "roe": 0.11112
+    }
+   },
+   "2022-06-30": {
+    "balance-sheet": {
+     "bvps": 18.755309,
+     "sharesOutTotalCommon": 3147482000,
+     "totalCommonEquity": 59032000000
+    },
+    "income-statement": {
+     "dividendGrowth": 0.16418,
+     "dps": 1.455,
+     "epsBasic": 2.094739,
+     "netinccmn": 6799000000,
+     "payoutratio": 0.56957
+    },
+    "ratios": {
+     "marketcap": 87192142341,
+     "pb": 1.477,
+     "pe": 12.824,
+     "roe": 0.11388
+    }
+   },
+   "2022-09-30": {
+    "balance-sheet": {
+     "bvps": 18.755309,
+     "sharesOutTotalCommon": 3147482000,
+     "totalCommonEquity": 59032000000
+    },
+    "income-statement": {
+     "dividendGrowth": 0.16418,
+     "dps": 1.51,
+     "epsBasic": 2.140726,
+     "netinccmn": 6891000000,
+     "payoutratio": 0.58134
+    },
+    "ratios": {
+     "marketcap": 90649819427,
+     "pb": 1.536,
+     "pe": 13.155,
+     "roe": 0.11592
+    }
+   },
+   "2022-12-31": {
+    "balance-sheet": {
+     "bvps": 19.619456,
+     "sharesOutTotalCommon": 3130311000,
+     "totalCommonEquity": 61415000000
+    },
+    "income-statement": {
+     "dividendGrowth": 0.13699,
+     "dps": 1.56,
+     "epsBasic": 2.224694,
+     "netinccmn": 7099000000,
+     "payoutratio": 0.58093
+    },
+    "ratios": {
+     "marketcap": 94542151519,
+     "pb": 1.539,
+     "pe": 13.318,
+     "roe": 0.11867
+    }
+   },
+   "2023-03-31": {
+    "balance-sheet": {
+     "bvps": 19.619456,
+     "sharesOutTotalCommon": 3130311000,
+     "totalCommonEquity": 61415000000
+    },
+    "income-statement": {
+     "dividendGrowth": 0.13699,
+     "dps": 1.61,
+     "epsBasic": 2.310148,
+     "netinccmn": 7307000000,
+     "payoutratio": 0.58054
+    },
+    "ratios": {
+     "marketcap": 86727087770,
+     "pb": 1.412,
+     "pe": 11.869,
+     "roe": 0.12203
+    }
+   },
+   "2023-06-30": {
+    "balance-sheet": {
+     "bvps": 19.595541,
+     "sharesOutTotalCommon": 3120812000,
+     "totalCommonEquity": 61154000000
+    },
+    "income-statement": {
+     "dividendGrowth": 0.07692,
+     "dps": 1.64,
+     "epsBasic": 2.337037,
+     "netinccmn": 7360500000,
+     "payoutratio": 0.58291
+    },
+    "ratios": {
+     "marketcap": 82548855057,
+     "pb": 1.342,
+     "pe": 11.215,
+     "roe": 0.12396
+    }
+   },
+   "2023-09-30": {
+    "balance-sheet": {
+     "bvps": 19.595541,
+     "sharesOutTotalCommon": 3120812000,
+     "totalCommonEquity": 61154000000
+    },
+    "income-statement": {
+     "dividendGrowth": 0.07692,
+     "dps": 1.67,
+     "epsBasic": 2.364158,
+     "netinccmn": 7414000000,
+     "payoutratio": 0.58524
+    },
+    "ratios": {
+     "marketcap": 90728763441,
+     "pb": 1.475,
+     "pe": 12.237,
+     "roe": 0.12395
+    }
+   },
+   "2023-12-31": {
+    "balance-sheet": {
+     "bvps": 19.832891,
+     "sharesOutTotalCommon": 3094153000,
+     "totalCommonEquity": 61366000000
+    },
+    "income-statement": {
+     "dividendGrowth": 0.01205,
+     "dps": 1.675,
+     "epsBasic": 2.294047,
+     "netinccmn": 7177500000,
+     "payoutratio": 0.62166
+    },
+    "ratios": {
+     "marketcap": 95530978459,
+     "pb": 1.548,
+     "pe": 13.31,
+     "roe": 0.11786
+    }
+   },
+   "2024-03-31": {
+    "balance-sheet": {
+     "bvps": 19.832891,
+     "sharesOutTotalCommon": 3094153000,
+     "totalCommonEquity": 61366000000
+    },
+    "income-statement": {
+     "dividendGrowth": 0.01205,
+     "dps": 1.68,
+     "epsBasic": 2.22361,
+     "netinccmn": 6941000000,
+     "payoutratio": 0.66057
+    },
+    "ratios": {
+     "marketcap": 107116288432,
+     "pb": 1.736,
+     "pe": 15.432,
+     "roe": 0.11437
+    }
+   },
+   "2024-06-30": {
+    "balance-sheet": {
+     "bvps": 20.04798,
+     "sharesOutTotalCommon": 3065396000,
+     "totalCommonEquity": 61455000000
+    },
+    "income-statement": {
+     "dividendGrowth": 0.0119,
+     "dps": 1.685,
+     "epsBasic": 2.234707,
+     "netinccmn": 6950500000,
+     "payoutratio": 0.66794
+    },
+    "ratios": {
+     "marketcap": 111833242086,
+     "pb": 1.798,
+     "pe": 16.09,
+     "roe": 0.11415
+    }
+   },
+   "2024-09-30": {
+    "balance-sheet": {
+     "bvps": 20.04798,
+     "sharesOutTotalCommon": 3065396000,
+     "totalCommonEquity": 61455000000
+    },
+    "income-statement": {
+     "dividendGrowth": 0.0119,
+     "dps": 1.69,
+     "epsBasic": 2.245885,
+     "netinccmn": 6960000000,
+     "payoutratio": 0.67529
+    },
+    "ratios": {
+     "marketcap": 114493844078,
+     "pb": 1.84,
+     "pe": 16.45,
+     "roe": 0.11447
+    }
+   },
+   "2024-12-31": {
+    "balance-sheet": {
+     "bvps": 20.350624,
+     "sharesOutTotalCommon": 3054894000,
+     "totalCommonEquity": 62169000000
+    },
+    "income-statement": {
+     "dividendGrowth": 0.0119,
+     "dps": 1.695,
+     "epsBasic": 2.240706,
+     "netinccmn": 6916500000,
+     "payoutratio": 0.67961
+    },
+    "ratios": {
+     "marketcap": 113819283106,
+     "pb": 1.809,
+     "pe": 16.456,
+     "roe": 0.11281
+    }
+   },
+   "2025-03-31": {
+    "balance-sheet": {
+     "bvps": 20.350624,
+     "sharesOutTotalCommon": 3054894000,
+     "totalCommonEquity": 62169000000
+    },
+    "income-statement": {
+     "dividendGrowth": 0.0119,
+     "dps": 1.7,
+     "epsBasic": 2.235485,
+     "netinccmn": 6873000000,
+     "payoutratio": 0.68398
+    },
+    "ratios": {
+     "marketcap": 103898473119,
+     "pb": 1.651,
+     "pe": 15.117,
+     "roe": 0.112
+    }
+   },
+   "2025-06-30": {
+    "balance-sheet": {
+     "bvps": 20.350624,
+     "sharesOutTotalCommon": null,
+     "totalCommonEquity": 62169000000
+    },
+    "income-statement": {
+     "dividendGrowth": null,
+     "dps": 0.425,
+     "epsBasic": null,
+     "netinccmn": 6940000000,
+     "payoutratio": null
+    },
+    "ratios": {
+     "marketcap": 120240627840,
+     "pb": 1.911,
+     "pe": 17.326,
+     "roe": 0.11212
+    }
+   },
+   "2025-09-30": {
+    "balance-sheet": {
+     "bvps": 20.592563,
+     "sharesOutTotalCommon": 3055569000,
+     "totalCommonEquity": 62922000000
+    },
+    "income-statement": {
+     "dividendGrowth": 3,
+     "dps": 1.7,
+     "epsBasic": 2.209545,
+     "netinccmn": 6759000000,
+     "payoutratio": 0.71431
+    },
+    "ratios": {
+     "marketcap": 134896280330.00002,
+     "pb": 2.119,
+     "pe": 19.958,
+     "roe": 0.10849
+    }
+   },
+   "2025-12-31": {
+    "balance-sheet": {
+     "bvps": 20.592563,
+     "sharesOutTotalCommon": null,
+     "totalCommonEquity": 62922000000
+    },
+    "income-statement": {
+     "dividendGrowth": null,
+     "dps": 1.275,
+     "epsBasic": null,
+     "netinccmn": 7055500000,
+     "payoutratio": null
+    },
+    "ratios": {
+     "marketcap": 129471086770,
+     "pb": 2.034,
+     "pe": 18.35,
+     "roe": 0.11222
+    }
+   },
+   "2026-03-31": {
+    "balance-sheet": {
+     "bvps": 19.782545,
+     "sharesOutTotalCommon": 3061335000,
+     "totalCommonEquity": 60561000000
+    },
+    "income-statement": {
+     "dividendGrowth": null,
+     "dps": 1.7,
+     "epsBasic": 1.996401,
+     "netinccmn": 6102000000,
+     "payoutratio": 0.78958
+    },
+    "ratios": {
+     "marketcap": 126811909655,
+     "pb": 2.07,
+     "pe": 20.782,
+     "roe": 0.09908
+    }
+   },
+   "2026-06-30": {
+    "balance-sheet": {
+     "bvps": 19.782545,
+     "sharesOutTotalCommon": 3061335000,
+     "totalCommonEquity": 60561000000
+    },
+    "income-statement": {
+     "dps": 3.4,
+     "epsBasic": 1.993248,
+     "netinccmn": 6102000000,
+     "payoutratio": null
+    },
+    "ratios": {
+     "marketcap": 115902877849,
+     "pb": 1.892,
+     "pe": 18.994,
+     "roe": null
+    }
+   }
+  },
+  "exchange": "asx",
+  "metric_sources": {
+   "bvps": "balance-sheet",
+   "dividendGrowth": "income-statement",
+   "dps": "income-statement",
+   "epsBasic": "income-statement",
+   "marketcap": "ratios",
+   "netinccmn": "income-statement",
+   "payoutratio": "income-statement",
+   "pb": "ratios",
+   "pe": "ratios",
+   "roe": "ratios",
+   "sharesOutTotalCommon": "balance-sheet",
+   "totalCommonEquity": "balance-sheet"
+  },
+  "period": "all"
+ }
+}

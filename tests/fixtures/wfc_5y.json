@@ -1,0 +1,301 @@
+{
+ "exchange": "NYSE",
+ "code": "WFC",
+ "period": "5y",
+ "raw": {
+  "code": "WFC",
+  "data": {
+   "2021-03-31": {
+    "income-statement": {
+     "dividendGrowth": -0.80392,
+     "dps": 0.1,
+     "epsBasic": 1.03
+    },
+    "ratios": {
+     "payoutratio": 0.0899906,
+     "pb": 0.864195,
+     "pe": 28.5182,
+     "roe": 0.0252369
+    }
+   },
+   "2021-06-30": {
+    "income-statement": {
+     "dividendGrowth": -0.80392,
+     "dps": 0.1,
+     "epsBasic": 1.39
+    },
+    "ratios": {
+     "payoutratio": 0.0717395,
+     "pb": 0.972756,
+     "pe": 12.0452,
+     "roe": 0.0361367
+    }
+   },
+   "2021-09-30": {
+    "income-statement": {
+     "dividendGrowth": 1,
+     "dps": 0.2,
+     "epsBasic": 1.18
+    },
+    "ratios": {
+     "payoutratio": 0.16879,
+     "pb": 0.981321,
+     "pe": 10.9716,
+     "roe": 0.0289732
+    }
+   },
+   "2021-12-31": {
+    "income-statement": {
+     "dividendGrowth": 1,
+     "dps": 0.2,
+     "epsBasic": 1.39
+    },
+    "ratios": {
+     "payoutratio": 1.16247,
+     "pb": 0.993799,
+     "pe": 9.44488,
+     "roe": 0.0380286
+    }
+   },
+   "2022-03-31": {
+    "income-statement": {
+     "dividendGrowth": 1.5,
+     "dps": 0.25,
+     "epsBasic": 0.92
+    },
+    "ratios": {
+     "payoutratio": 0.273012,
+     "pb": 1.02463,
+     "pe": 10.0124,
+     "roe": 0.0211763
+    }
+   },
+   "2022-06-30": {
+    "income-statement": {
+     "dividendGrowth": 1.5,
+     "dps": 0.25,
+     "epsBasic": 0.75
+    },
+    "ratios": {
+     "payoutratio": 0.330423,
+     "pb": 0.836866,
+     "pe": 9.30404,
+     "roe": 0.0159605
+    }
+   },
+   "2022-09-30": {
+    "income-statement": {
+     "dividendGrowth": 0.5,
+     "dps": 0.3,
+     "epsBasic": 0.87
+    },
+    "ratios": {
+     "payoutratio": 1.24449,
+     "pb": 0.866414,
+     "pe": 10.3128,
+     "roe": 0.019292
+    }
+   },
+   "2022-12-31": {
+    "income-statement": {
+     "dividendGrowth": 0.5,
+     "dps": 0.3,
+     "epsBasic": 0.75
+    },
+    "ratios": {
+     "payoutratio": 0.00232108,
+     "pb": 0.878324,
+     "pe": 12.6269,
+     "roe": 0.0141168
+    }
+   },
+   "2023-03-31": {
+    "income-statement": {
+     "dividendGrowth": 0.2,
+     "dps": 0.3,
+     "epsBasic": 1.24
+    },
+    "ratios": {
+     "payoutratio": 0.253978,
+     "pb": 0.776458,
+     "pe": 10.4123,
+     "roe": 0.0267464
+    }
+   },
+   "2023-06-30": {
+    "income-statement": {
+     "dividendGrowth": 0.2,
+     "dps": 0.3,
+     "epsBasic": 1.26
+    },
+    "ratios": {
+     "payoutratio": 0.223868,
+     "pb": 0.868723,
+     "pe": 10.4352,
+     "roe": 0.0271075
+    }
+   },
+   "2023-09-30": {
+    "income-statement": {
+     "dividendGrowth": 0.16667,
+     "dps": 0.35,
+     "epsBasic": 1.49
+    },
+    "ratios": {
+     "payoutratio": 1.33064,
+     "pb": 0.822542,
+     "pe": 8.67516,
+     "roe": 0.0317976
+    }
+   },
+   "2023-12-31": {
+    "income-statement": {
+     "dividendGrowth": 0.16667,
+     "dps": 0.35,
+     "epsBasic": 0.87
+    },
+    "ratios": {
+     "payoutratio": -0.0925926,
+     "pb": 0.953703,
+     "pe": 10.1905,
+     "roe": 0.0189906
+    }
+   },
+   "2024-03-31": {
+    "income-statement": {
+     "dividendGrowth": 0.16667,
+     "dps": 0.35,
+     "epsBasic": 1.21
+    },
+    "ratios": {
+     "payoutratio": 0.289126,
+     "pb": 1.12166,
+     "pe": 12.1002,
+     "roe": 0.0252696
+    }
+   },
+   "2024-06-30": {
+    "income-statement": {
+     "dividendGrowth": 0.16667,
+     "dps": 0.35,
+     "epsBasic": 1.35
+    },
+    "ratios": {
+     "payoutratio": 0.214009,
+     "pb": 1.14542,
+     "pe": 12.1951,
+     "roe": 0.0272646
+    }
+   },
+   "2024-09-30": {
+    "income-statement": {
+     "dividendGrowth": 0.14286,
+     "dps": 0.4,
+     "epsBasic": 1.43
+    },
+    "ratios": {
+     "payoutratio": 0.279678,
+     "pb": 1.03122,
+     "pe": 11.7443,
+     "roe": 0.0281449
+    }
+   },
+   "2024-12-31": {
+    "income-statement": {
+     "dividendGrowth": 0.14286,
+     "dps": 0.4,
+     "epsBasic": 1.45
+    },
+    "ratios": {
+     "payoutratio": 0.275984,
+     "pb": 1.28972,
+     "pe": 13.0801,
+     "roe": 0.0285638
+    }
+   },
+   "2025-03-31": {
+    "income-statement": {
+     "dividendGrowth": 0.14286,
+     "dps": 0.4,
+     "epsBasic": 1.41
+    },
+    "ratios": {
+     "payoutratio": 0.285529,
+     "pb": 1.29304,
+     "pe": 12.8887,
+     "roe": 0.0262815
+    }
+   },
+   "2025-06-30": {
+    "income-statement": {
+     "dividendGrowth": 0.14286,
+     "dps": 0.4,
+     "epsBasic": 1.61
+    },
+    "ratios": {
+     "payoutratio": 0.249808,
+     "pb": 1.42463,
+     "pe": 13.7192,
+     "roe": 0.0305842
+    }
+   },
+   "2025-09-30": {
+    "income-statement": {
+     "dividendGrowth": 0.125,
+     "dps": 0.45,
+     "epsBasic": 1.68
+    },
+    "ratios": {
+     "payoutratio": 0.267927,
+     "pb": 1.45701,
+     "pe": 13.7862,
+     "roe": 0.0304818
+    }
+   },
+   "2025-12-31": {
+    "income-statement": {
+     "dividendGrowth": 0.125,
+     "dps": 0.45,
+     "epsBasic": 1.64
+    },
+    "ratios": {
+     "payoutratio": 0.273367,
+     "pb": 1.5914,
+     "pe": 14.8882,
+     "roe": 0.0297882
+    }
+   },
+   "2026-03-31": {
+    "income-statement": {
+     "dividendGrowth": 0.125,
+     "dps": 0.45,
+     "epsBasic": 1.62
+    },
+    "ratios": {
+     "payoutratio": 0.2774,
+     "pb": 1.36746,
+     "pe": 12.2855,
+     "roe": 0.0291284
+    }
+   }
+  },
+  "errors": [
+   "metric \"bvps\" not found in any statement",
+   "metric \"totalCommonEquity\" not found in any statement",
+   "metric \"netinccmn\" not found in any statement",
+   "metric \"sharesOutTotalCommon\" not found in any statement",
+   "metric \"marketcap\" not found in any statement"
+  ],
+  "exchange": "nyse",
+  "metric_sources": {
+   "dividendGrowth": "income-statement",
+   "dps": "income-statement",
+   "epsBasic": "income-statement",
+   "payoutratio": "ratios",
+   "pb": "ratios",
+   "pe": "ratios",
+   "roe": "ratios"
+  },
+  "period": "5y"
+ }
+}

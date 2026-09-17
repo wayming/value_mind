@@ -13,12 +13,18 @@ ROE 加上派息率,决定增长率。
 
 ## 数据获取(MCP 工具)
 
-1. `list_metrics` 确认可用指标。关键指标:
-   - 收入表:epsBasic、epsdil、netinc、netinccmn、dps、payoutratio、dividendGrowth
-   - 比率:roe、dividendyield、marketcap
-   - 现金流表:commonDividendCF(现金股息)、commonRepurchasedBank(股票回购)
-2. `get_financials` 取上述指标,period 用 "5y"(股息和 ROE 都要多年数据才能判断稳定性)。
-3. 数据够用即止。
+**先看上下文**:上下文里「Python 判定口径后的年度数据」通常已经含本节点要的全部东西 ——
+每个指标的 `latest`、**`by_year`(逐年观测,已年化)**、`growth_yoy`、口径依据与被修正的坏点。
+有它就别再抓(`dps_by_year` 直接按财年从 `by_year` 里取)。只有缺指标时才调工具。
+
+需要补数时**只调一次** `get_financials`,metrics 一次给全:
+`dps、epsBasic、netinccmn、totalCommonEquity、roe、pb、pe`(前四个 + roe/pb/pe 是判定
+年度口径用的参照指标,缺了就只能按原值用,**不要省**),period 用 "5y"。
+
+本节点最多 2 次 `get_financials`(代码强制),而且**换 period 反复抓取没有意义**:工具返回
+的序列只保留最近 12 个观测,换窗口只会换一批被省略的点,不会多出中间的年份。抓两次之后
+必须立即输出参数,缺的部分用假设并在 `payout_basis`/`analysis` 里注明是假设。
+(`list_metrics` 同理:同一节点内不必重复调;关键指标清单就是上面那七个。)
 
 ## 分析步骤
 
@@ -35,17 +41,16 @@ ROE 加上派息率,决定增长率。
    直接稀释 ROE(资本更厚、同样的利润摊在更多股权上)。给出可持续的 roe_normalized 和理由。
 5. **增长率的约束**:g = ROE × (1 − 派息率),由 Python 计算。你只需保证 ROE 和派息率判断合理。
 
-   **口径提醒(必答 `roe_series_basis`)**:你给的 `roe_normalized` 必须是**年度**口径,
-   而数据源 roe 序列的口径**因公司而异,必须由你判断**,Python 按你的判断年化:
-   - `单季`:每个点是一个季度的 ROE,值明显偏小 —— 银行约 2–3%,×4 才到年度水平。特征是锯齿状。
-   - `年度`:每个点已是滚动年度/TTM 值,值直接落在该公司年度 ROE 的量级(银行 10–12%)。特征是平滑。
-   - `半年度`(×2)/`月度`(×12):少见,同理判断。
-
-   **日期间隔不能用来判断这件事**:季度采样既可能是单季值,也可能是滚动年度值,
-   两种情况的日期都是每 91 天一个点。判断依据只能是**数值量级与平滑度**。
-   判断错方向的代价很直接:把单季值当年度 → σ 低估 4 倍、回归预测 PB 偏高;
-   把年度值当单季 → σ 高估 4 倍。Python 会用你声明的口径年化后再与 `roe_normalized`
-   比较,报出"相差超过 5 个百分点"说明确实对不上,需要给解释或修正。
+   **口径提醒(不需要你判断)**:你给的 `roe_normalized` 必须是**年度**(12 个月)口径。
+   数据源的口径因公司而异,**而且同一条序列里能混着两种**——实测 ASX:NAB 前几年是年报值
+   ÷4、之后才是 12 个月 TTM 值,靠数值量级或日期间隔猜会静默错 4 倍。
+   这件事已由 Python 按尺度无关的恒等式(pb/pe ÷ roe、roe ÷ 净资产收益率)判定好,
+   并以「Python 判定口径后的年度数据」放进上下文:**直接采用其中的值与判定依据**
+   (`basis` 就是口径),不要自己换算、也不要重新判断口径。同理 `dps_by_year` 也用那里的
+   `dps`(它还带一个 Python 算好的 `growth_yoy`,比数据源自己的 `dividendGrowth` 可靠——
+   后者尾部被坏点污染成 +300%)。
+   若你的 `roe_normalized` 与数据里的年度 ROE 相差超过 5 个百分点,Python 会报出来:
+   那是在问你归一化理由(你把 17.56% 调成 13.51% 就是这种情形),不是口径问题。
    注意联动:派息越多 → 留存越少 → 增长越慢;银行受监管资本约束,留存收益是股权账面
    增长的唯一途径,这一关系被强化。
 
@@ -67,6 +72,11 @@ ROE 加上派息率,决定增长率。
 按 schema(DividendsGrowthParams)输出:dividends_reliable、dps_by_year(年度值)、payout_ratio、
 payout_basis(口径说明)、include_buybacks、buyback_adjusted_payout(多年平均,小数)、
 roe_normalized、roe_normalization_reason、shares_outstanding(总股本,用于每股换算)、analysis。
+口径不用你申报:数据序列的口径由 Python 判定。
+
+`dps_by_year` 就取年度数据块里 `dps` 的 `by_year` 逐年观测(已年化、已修正坏点),键用年份、
+值取该财年的每股股息;若某年确实没有观测,跳过该年而不是编一个数。凡是数据里没有、
+由你假设的数字,都要在 `payout_basis` 或 `analysis` 里写明是假设。
 
 ## 公式(Python 计算,你不需要算)
 

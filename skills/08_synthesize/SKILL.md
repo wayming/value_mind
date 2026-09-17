@@ -10,7 +10,7 @@ description: 汇合 DDM、监管资本 FCFE、超额回报、相对估值的结�
 把各方法的结果汇合成一个估值区间与结论。你收到的是各方法已经算好的每股价值
 (Python 算的),你的工作是**解释分歧、定权重、回顾驱动因素、给出结论**。
 
-## 输入(上下文中已提供,不必再抓数据)
+## 输入(上下文中已提供;本节点**没有**数据工具,不要试图取数)
 
 - 各方法每股价值:ddm_per_share、fcfe_per_share、excess_per_share_perpetuity(上界)、
   excess_per_share_staged(中央值)、relative_pb_fair_price。

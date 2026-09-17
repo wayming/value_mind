@@ -9,6 +9,8 @@ from typing import Any
 
 import app.config as config
 import app.formulas as F
+import app.series as S
+from app.mcp_tools import annual_block, cached_metrics
 
 SKILL_ORDER = [
     ("classify", "公司分类"),
@@ -38,6 +40,91 @@ def _fmt(v: Any, digits: int = 2) -> str:
             return f"{v:.4f}"
         return f"{v:,.{digits}f}"
     return str(v)
+
+
+_BASIS_METRICS = ("epsBasic", "dps", "netinccmn", "totalCommonEquity", "bvps", "roe",
+                  "payoutratio")
+
+
+def _basis_table(state: dict) -> list[str]:
+    """数据口径表:每个指标的**年度口径**与判定依据(app/series.py)。
+
+    口径不是注释而是数字的一部分:数据源把年报值 ÷4 与 12 个月 TTM 值混在同一条序列里
+    (实测 ASX:NAB),看到 1.70 之前得知道它是怎么来的、原始值长什么样。
+    """
+    cache = state.get("data_cache") or {}
+    if not cache:
+        return []
+    try:
+        block, meta = annual_block(cache, state.get("exchange", ""), state.get("code", ""),
+                                   metrics=_BASIS_METRICS)
+        described = S.describe(block, _BASIS_METRICS)
+    except Exception as e:  # noqa: BLE001 —— 报告优先,口径表失败不影响其余部分
+        return [f"(数据口径归一化失败:{e})", ""]
+    if not described:
+        return []
+    note = [f"以下数值经 Python 按尺度无关的恒等式归一化到**年度(12 个月)口径**"
+            f"({meta['source']}):"]
+    rows = ["| 指标 | 口径 | 最新值(日期) | 样本数 | 判定依据 | 被修正的点(原值→现值) |",
+            "|---|---|---|---|---|---|"]
+    for metric, d in described.items():
+        series = block[metric]
+        adj = dict(sorted(d.get("adjusted_points", {}).items()))
+        adj_s = ";".join(f"{k} {_fmt(series.raw.get(k))}→{_fmt(series.values.get(k))}"
+                         for k in adj) or "—"
+        if len(series.adjusted) > len(adj):        # 表里只列最近几个,但要说明总共有多少
+            adj_s = f"共 {len(series.adjusted)} 个:{adj_s}"
+        rows.append(f"| {metric} | {d['basis']} | {_fmt(d['latest'])}({d['latest_date']}) | "
+                    f"{d['n']} | {d.get('evidence', '')} | {adj_s} |")
+    tail = [""] + _basis_missing_note(cache, state, set(described))
+    return note + [""] + rows + tail + [""]
+
+
+def _basis_missing_note(cache: dict, state: dict, shown: set[str]) -> list[str]:
+    """表里没出现的指标,要区分"这次压根没抓到"与"抓到了但锚不住口径"。
+
+    两者都意味着报告里那个数字没有 Python 背书的年度口径(LLM 只能按原值用),但处理方式
+    完全不同:前者得去取数,后者得补一个带 pb/pe 或净资产的抓取。
+    """
+    missing = [m for m in _BASIS_METRICS if m not in shown]
+    if not missing:
+        return []
+    try:
+        have = cached_metrics(cache, state.get("exchange", ""), state.get("code", ""))
+    except Exception:  # noqa: BLE001 —— 报告优先,这一行说明失败不影响其余部分
+        return []
+    fetched, unfetched = [m for m in missing if m in have], [m for m in missing if m not in have]
+    out = []
+    if fetched:
+        out.append(f"未判定口径:{'、'.join(fetched)} —— 有数据,但缓存里没有一份抓取同时带齐"
+                   f"参照指标(pb/pe,或 roe 加净收益与净资产),按原值使用,请核对是否已是年度口径。")
+    if unfetched:
+        out.append(f"未取到:{'、'.join(unfetched)} —— 本次运行没有抓到这些指标。")
+    return out
+
+
+_SKILL_LABEL = dict(SKILL_ORDER)
+
+
+def _provenance_section(skills: dict) -> list[str]:
+    """参数来源核对:每个关键数字是从 MCP 数据来的,还是 LLM 假设的(app/nodes._source_row)。
+
+    为什么值得单列一节:β、Rf、ERP 在数据源里根本不存在(只能是假设),归一化 ROE 则是
+    模型对数据的判断 —— 报告里如果只有"数据来源:MCP 调用了 N 次",读者无法分辨哪个数字
+    有数据背书、哪个是模型编的。表里的"价值判断出现偏差"正是这类数字被质疑的起点。
+    """
+    rows: list[str] = []
+    for key, _label in SKILL_ORDER:
+        s = (skills or {}).get(key) or {}
+        for row in s.get("provenance") or []:
+            value = row.get("value")
+            rows.append(f"| {_SKILL_LABEL.get(key, key)} | {row.get('field', '')} | "
+                        f"{_fmt(value) if value is not None else '—'} | "
+                        f"{row.get('source', '')} | {row.get('note', '')} |")
+    if not rows:
+        return []
+    return ["## 参数来源核对(哪些来自 MCP、哪些是 LLM 假设)", "",
+            "| 节点 | 参数 | 值 | 来源 | 核对 |", "|---|---|---|---|---|", *rows, ""]
 
 
 def _dict_table(d: dict, headers=("项目", "值")) -> list[str]:
@@ -198,6 +285,7 @@ def build_report(state: dict) -> str:
         L.append("")
 
     # ---- 数据质量与警示 ----
+    L.extend(_provenance_section(skills))
     warns = state.get("warnings") or []
     errs = state.get("errors") or []
     if warns or errs:
@@ -209,11 +297,19 @@ def build_report(state: dict) -> str:
             L.append(f"- ❌ {e}")
         L.append("")
 
+    # ---- 数据口径 ----
+    basis = _basis_table(state)
+    if basis:
+        L.append("## 数据口径(归一化)")
+        L.append("")
+        L.extend(basis)
+
     cache = state.get("data_cache") or {}
     if cache:
         L.append("## 数据来源")
         L.append("")
-        L.append(f"本次分析经 MCP 调用了 {len(cache)} 次数据接口:")
+        L.append(f"本次分析经 MCP 调用了 {len(cache)} 次数据接口"
+                 f"(只说明调了哪些接口;每个参数的具体来源见上一节):")
         L.append("")
         for k in sorted(cache):
             L.append(f"- `{k[:160]}`")

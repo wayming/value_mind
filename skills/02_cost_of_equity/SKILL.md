@@ -12,10 +12,12 @@ description: 估算金融服务公司的股权成本(COE = Rf + β × ERP):行�
 
 ## 数据获取(MCP 工具)
 
-- `list_metrics` 确认可用的比率指标(ratios 组,如 roe、pb、pe)。
+- `list_metrics` 确认可用的比率指标(ratios 组,如 roe、pb、pe);同一节点内不必重复调。
 - **MCP 没有 beta 指标,也没有价格历史序列**——β 无法从数据计算,必须基于行业知识假设,
   并在 beta_source 中写明依据。不得声称"由数据计算得出"。
-- 如需公司体量/结构信息辅助判断 β,可调 `get_financials` 取 marketcap、assets 等少量指标。
+- 如需公司体量/结构信息辅助判断 β,可调 `get_financials` 取 marketcap、assets 等少量指标;
+  **一次调用就把本节点要用到的全部指标带上**(体量/结构 + 参照指标),不要为了一两个辅助指标
+  再抓一次 —— 本节点最多 2 次 `get_financials`(代码强制),零散调用会把额度耗在补漏上。
 
 ## 分析步骤
 

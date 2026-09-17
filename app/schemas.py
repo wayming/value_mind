@@ -41,23 +41,13 @@ class DividendsGrowthParams(BaseModel):
     """股息与增长(skill 03):增长率 g = ROE × (1 − 派息率),由 Python 计算。"""
 
     dividends_reliable: bool = Field(description="股息是否可靠可预测(不派息/波动大则 False,将触发 DDM 降级)")
-    dps_by_year: dict[str, float] = Field(default_factory=dict, description="最近各年度每股股息(年度值),键为年份如 '2023',来自 dps 指标年度数据或计算")
+    dps_by_year: dict[str, float] = Field(default_factory=dict, description="最近各年度每股股息(年度值),键为年份如 '2023';直接采用上下文里「Python 判定口径后的年度数据」的 dps,不要自己换算")
     payout_ratio: float = Field(default=0.0, description="选定的派息率(小数):优先用年度 dps/eps 自算,不要直接用季报 payoutratio 指标")
     payout_basis: str = Field(description="派息率口径说明:用哪一年(或多年均值)的 dps/eps、为何不用 payoutratio 指标(季报口径失真)")
     include_buybacks: bool = Field(default=False, description="是否纳入股票回购计算复合派息率(回购年度波动大,须多年平均)")
     buyback_adjusted_payout: float | None = Field(default=None, description="复合派息率=(股息+回购)/净收益(小数),多年平均;不纳入回购则为 None")
-    roe_normalized: float = Field(default=0.0, description="归一化 ROE(小数):当前 ROE 经危机/监管资本要求/周期调整后的可持续水平。必须是**年度**口径")
+    roe_normalized: float = Field(default=0.0, description="归一化 ROE(小数):当前 ROE 经危机/监管资本要求/周期调整后的可持续水平。必须是**年度**口径;当前年度 ROE 取上下文里 Python 已判定口径的 roe,不要靠数值量级猜口径")
     roe_normalization_reason: str = Field(description="归一化理由:如监管资本比率要求提高约30%使 ROE 从 17.56% 降至 13.51%(第九章富国银行例)")
-    roe_series_basis: str = Field(
-        default="年度",
-        description="数据源 roe 序列的口径(必答,决定 Python 是否年化):"
-                    "『单季』= 每个点是一个季度的 ROE(值明显偏小,如银行 2–3%,×4 才到年度水平);"
-                    "『半年度』= 每点是半年(×2);『年度』= 每点已是滚动年度/TTM 值(×1,如银行 10–12%);"
-                    "『月度』= 每点是一个月(×12)。"
-                    "判断方法:看序列数值本身是否已落在该公司年度 ROE 的合理量级,以及序列是否平滑"
-                    "(TTM 平滑、单季锯齿)。日期间隔不能用来判断这一点——季度采样既可能采的是单季值,"
-                    "也可能采的是滚动年度值。",
-    )
     shares_outstanding: float | None = Field(default=None, description="总股本(股数),用于换算每股价值;取 sharesBasic 等指标最新值")
     analysis: str = Field(description="派息与增长判断过程简述:回购的可持续性、留存收益与监管资本约束的联动")
 
@@ -67,7 +57,7 @@ class DdmParams(BaseModel):
 
     ddm_applicable: bool = Field(description="DDM 是否适用:依赖 skill 03 的 dividends_reliable,股息不可靠则为 False")
     skip_reason: str = Field(default="", description="不适用时必须填写理由")
-    eps0: float | None = Field(default=None, description="最近年度每股收益(小数),用于生成高增长期股息序列")
+    eps0: float | None = Field(default=None, description="最近 12 个月(TTM)每股收益(小数),用于生成高增长期股息序列;取上下文里「Python 判定口径后的年度数据」的 epsBasic,不要自己换算")
     payout_high: float | None = Field(default=None, description="高增长期派息率(小数),通常沿用 skill 03 结论")
     g_high: float | None = Field(default=None, description="高增长期收益/股息增长率(小数),须与 ROE×(1−派息率)自洽")
     stage_years: int | None = Field(default=None, description="高增长期年限(如 5)")
@@ -121,8 +111,8 @@ class RelativeParams(BaseModel):
     pe_current: float | None = Field(default=None, description="当前市盈率(pe 指标最新值,小数)")
     bvps: float | None = Field(default=None, description="每股账面价值(小数,本币)")
     eps: float | None = Field(default=None, description="最近年度每股收益(小数,本币)")
-    roe_series_metric: str = Field(default="roe", description="用于回归的 ROE 历史序列指标名(通常为 roe);σ 由 Python 从 MCP 缓存序列计算,LLM 不手算标准差")
-    roe_window: str = Field(default="5y", description="ROE 序列窗口,如 2y/5y/all")
+    roe_series_metric: str = Field(default="roe", description="用于回归的 ROE 历史序列指标名(通常为 roe);σ 由 Python 从 MCP 缓存序列计算(口径由 Python 判定并年化),LLM 不手算标准差")
+    roe_window: str = Field(default="5y", description="ROE 序列窗口,如 2y/5y/all。样本越多 σ 越稳,但窗口越长包含的危机年越多、σ 越大")
     roe_std_dev_assumed: float | None = Field(default=None, description="仅在 ROE 序列无法从数据取得时使用的假设标准差(小数,如 0.28);由 Python 优先用真实序列计算,此值只是数据缺失时的降级假设,必须在 comparable_notes 或 analysis 中标注为假设")
     comparable_notes: str = Field(default="", description="可比公司说明:同类银行的 PB/PE 水平(LLM 知识或从 MCP 抓取同业数据),注明来源")
     loan_loss_provision_note: str = Field(default="", description="贷款损失准备金影响说明:计提保守的银行报告收益被压低、PE 虚高,反之亦然")

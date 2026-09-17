@@ -47,6 +47,10 @@ LLM_LOG = _env("LLM_LOG", "1") == "1"                  # 0 = 关闭
 LLM_LOG_PATH = _env("LLM_LOG_PATH", "")                # 空 = <value_mind>/llm.out
 
 MAX_LLM_STEPS = int(_env("MAX_LLM_STEPS", "14"))       # 单节点内 LLM 工具调用步数上限
+# 单节点内**去重后**的 get_financials 次数上限(mcp_tools 的账本强制执行)。实测 skill 03
+# 会拿同一个指标清单换着 period 连抓 13 次(上下文涨到 31k token),提示词拦不住;
+# 2 = 一次取全 + 一次补漏,再多的调用只会重复同一份数据。
+MAX_FINANCIALS_CALLS = int(_env("MAX_FINANCIALS_CALLS", "2"))
 LLM_TEMPERATURE = float(_env("LLM_TEMPERATURE", "0"))  # 估值分析用 0,保证可复现
 LLM_TIMEOUT = float(_env("LLM_TIMEOUT", "120"))        # 秒
 PARALLEL_TOOL_CALLS = _env("LLM_PARALLEL_TOOL_CALLS", "0") == "1"

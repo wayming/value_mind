@@ -515,6 +515,9 @@ def basis_conflict(stats: dict) -> str | None:
 
     只判一种硬矛盾:采样间隔接近一年,却声称每个点是单季/月度值。
     反向不判——季度采样滚动年度值是常见做法(实测 NAB 就是这样)。
+
+    只在调用方**自己声明**了口径时才有意义。主链路已不声明口径:序列由 app/series.py
+    按尺度无关的恒等式判定并年化,`AnnualSeries.stats()` 传的是 factor=1.0。
     """
     implied = stats.get("date_implied") or ""
     if "年度" in implied and stats.get("periods_per_year", 1.0) > 2:

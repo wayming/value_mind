@@ -75,7 +75,7 @@ def stubbed(monkeypatch):
     """
     fixture_data = copy.deepcopy(WELLS)
 
-    async def fake(skill_id, ctx, schema):
+    async def fake(skill_id, ctx, schema, extra_prompt="", allow_tools=True):
         key = {
             "01_company_classifier": "classify",
             "02_cost_of_equity": "cost_of_equity",

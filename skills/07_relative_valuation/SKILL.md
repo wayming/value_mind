@@ -17,19 +17,23 @@ description: 金融服务公司相对估值:PE/PB 倍数分析,第九章 PB 回�
 
 ## 数据获取(MCP 工具)
 
-1. `get_financials` 取:ratios 组的 pe、pb、roe(取**全历史序列**,用于算 σ,窗口由你定 2y/5y/all)、
+1. `get_financials` 取:ratios 组的 pe、pb、roe(用于算 σ,窗口由你定 2y/5y/all)、
    peForward;income 组 epsBasic;balance 组 bvps。
+   **一次调用取全,不要为不同 period 反复抓**:σ 是从**缓存里某一次抓取**算的(多次抓取
+   不合并,否则样本数会随你恰好调过哪些窗口而变),声明的 `roe_window` 要与你实际取数用的
+   period 一致;上下文里若已有「Python 判定口径后的年度数据」,优先复用。
 2. 可比公司数据:MCP 没有同行清单接口。可以:
    - 用你的知识给出同类银行的 PB/PE 水平(注明来源与时间);
    - 或调 `get_financials` 抓 1–2 家同业代码的 pb/pe/roe 对比(先 get_data_period 确认有数据)。
 
 ## 分析步骤
 
-1. **当前倍数**:pb_current、pe_current(最新值)。
+1. **当前倍数**:pb_current、pe_current(最新值),同样以「Python 判定口径后的年度数据」
+   里的值为准。
 2. **回归预测 PB**(第九章公式,由 Python 算):你只提供 roe(当前/归一化)和 roe_series_metric/roe_window,
    **σ 由 Python 从 MCP 缓存的 ROE 历史序列计算**——不要自己手算标准差。
-   Python 按 skill 03 声明的序列口径年化,保证 σ 与回归里年度口径的 ROE 同单位;
-   口径判断错了 σ 就会差 4 倍,直接扭曲预测 PB。
+   序列口径也由 Python 判定并年化(数据源的口径因公司而异,同一条序列里还能混着两种口径),
+   保证 σ 与回归里年度口径的 ROE 同单位;口径若按原始值取,σ 会差 4 倍,直接扭曲预测 PB。
    只有在 ROE 序列确实取不到时,才填 `roe_std_dev_assumed` 作为降级假设(必须标注为假设,
    代码会在报告中告警);能取到数据时该字段留空。
 3. **可比公司**:同类银行的 PB/PE 水平如何?这家公司相对同业的 ROE、风险(标准差)能否支撑更高倍数?
